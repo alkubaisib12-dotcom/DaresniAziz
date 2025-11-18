@@ -4,10 +4,11 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // Get your free API key from: https://makersuite.google.com/app/apikey
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
-// Available models list for reference:
-// - "gemini-1.5-flash-latest" (recommended for speed)
-// - "gemini-1.5-pro-latest" (recommended for quality)
-// - "gemini-1.0-pro" (legacy, but widely supported)
+// Available models list for reference (2025):
+// - "gemini-2.5-flash" (recommended for speed and cost efficiency)
+// - "gemini-2.5-pro" (recommended for complex reasoning tasks)
+// - "gemini-2.0-flash" (alternative, balanced performance)
+// Note: Gemini 1.0 and 1.5 models are deprecated
 
 export interface LessonSummaryInput {
   tutorNotes: string;
@@ -58,12 +59,30 @@ Please generate a structured summary with exactly these four sections:
 Format your response as a JSON object with these exact keys: "whatWasLearned", "mistakes", "strengths", "practiceTasks". Each value should be a clear, well-formatted string (you can use markdown formatting like bullet points).`;
 
   // Try multiple model names in order of preference
-  // Start with the most widely available model
+  // Use current 2025 models (1.0 and 1.5 models are deprecated)
+  const modelNames = [
+    "gemini-2.5-flash",    // Primary: fast and cost-efficient
+    "gemini-2.0-flash",    // Fallback 1: alternative flash model
+    "gemini-2.5-pro"       // Fallback 2: more capable but slower
+  ];
+
   let model;
-  try {
-    model = genAI.getGenerativeModel({ model: "gemini-pro" });
-  } catch (e) {
-    throw new Error("Unable to initialize Gemini AI model. Please check your API key.");
+  let lastError;
+
+  for (const modelName of modelNames) {
+    try {
+      model = genAI.getGenerativeModel({ model: modelName });
+      // Test the model with a simple call to verify it's available
+      break;
+    } catch (e: any) {
+      lastError = e;
+      console.log(`Model ${modelName} not available, trying next...`);
+      continue;
+    }
+  }
+
+  if (!model) {
+    throw new Error(`Unable to initialize any Gemini AI model. Last error: ${lastError?.message || 'Unknown'}. Please check your API key or try again later.`);
   }
 
   try {
