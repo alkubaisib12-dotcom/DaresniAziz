@@ -268,6 +268,16 @@ export function BookingModal({ tutor, onClose, onConfirm }: BookingModalProps) {
           <DialogTitle>Book a Session</DialogTitle>
         </DialogHeader>
 
+        {/* Warning for tutor users */}
+        {user?.role === "tutor" && (
+          <Alert className="bg-yellow-50 border-yellow-300 dark:bg-yellow-900/20 dark:border-yellow-800">
+            <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-500" />
+            <AlertDescription className="text-yellow-800 dark:text-yellow-400">
+              You are logged in as a tutor account. Only students can book sessions.
+            </AlertDescription>
+          </Alert>
+        )}
+
         <div className="space-y-6">
           {/* Tutor Info */}
           <div className="flex items-center space-x-4 p-4 bg-secondary rounded-lg">
@@ -450,7 +460,7 @@ export function BookingModal({ tutor, onClose, onConfirm }: BookingModalProps) {
             </Button>
             <Button
               onClick={handleBooking}
-              disabled={m.isPending || !selectedDate || selectedSlots.length === 0}
+              disabled={m.isPending || !selectedDate || selectedSlots.length === 0 || user?.role === "tutor"}
               className="flex-1 btn-primary"
               data-testid="button-confirm-booking"
             >

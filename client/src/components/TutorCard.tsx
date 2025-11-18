@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { formatMoney } from "@/lib/currency";
+import { useAuth } from "@/hooks/useAuth";
 
 type TutorCardProps = {
   tutor: any; // expects { id, user, hourlyRate, subjects, averageRating?, reviewCount?, totalRating?, totalReviews?, isVerified?, isActive?, bio?, experience? }
@@ -19,6 +20,7 @@ export function TutorCard({
   onFavorite,
   isFavorite = false,
 }: TutorCardProps) {
+  const { user } = useAuth();
   const hourlyRate = Number(tutor?.hourlyRate ?? 0);
 
   // Be flexible with backend field names
@@ -160,15 +162,17 @@ export function TutorCard({
 
         {/* Action Buttons */}
         <div className="flex space-x-2 mt-auto">
-          <Button
-            className="btn-primary flex-1"
-            onClick={onBook}
-            disabled={!isVerified || !isActive}
-            data-testid="button-book-session"
-          >
-            <i className="fas fa-calendar-plus mr-2" />
-            Book Session
-          </Button>
+          {user?.role !== "tutor" && (
+            <Button
+              className="btn-primary flex-1"
+              onClick={onBook}
+              disabled={!isVerified || !isActive}
+              data-testid="button-book-session"
+            >
+              <i className="fas fa-calendar-plus mr-2" />
+              Book Session
+            </Button>
+          )}
           <Button
             variant="outline"
             size="icon"

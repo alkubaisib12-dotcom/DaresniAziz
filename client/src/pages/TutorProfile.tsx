@@ -395,17 +395,19 @@ export default function TutorProfile() {
                       </div>
                     </div>
 
-                    <div className="flex space-x-4">
-                      <Button
-                        size="lg"
-                        className="btn-primary px-8"
-                        onClick={handleBookSelected}
-                        data-testid="button-book-session"
-                      >
-                        <i className="fas fa-calendar-plus mr-2" />
-                        Book Selected Time
-                      </Button>
-                    </div>
+                    {user?.role !== "tutor" && (
+                      <div className="flex space-x-4">
+                        <Button
+                          size="lg"
+                          className="btn-primary px-8"
+                          onClick={handleBookSelected}
+                          data-testid="button-book-session"
+                        >
+                          <i className="fas fa-calendar-plus mr-2" />
+                          Book Selected Time
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -676,14 +678,16 @@ export default function TutorProfile() {
                           </div>
                         )}
 
-                        <Button
-                          className="w-full mt-6 btn-primary"
-                          onClick={handleBookSelected}
-                          disabled={!selectedSlot || createSession.isPending}
-                          data-testid="button-book-selected-time"
-                        >
-                          {createSession.isPending ? "Booking…" : "Book Selected Time"}
-                        </Button>
+                        {user?.role !== "tutor" && (
+                          <Button
+                            className="w-full mt-6 btn-primary"
+                            onClick={handleBookSelected}
+                            disabled={!selectedSlot || createSession.isPending}
+                            data-testid="button-book-selected-time"
+                          >
+                            {createSession.isPending ? "Booking…" : "Book Selected Time"}
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </CardContent>
@@ -700,14 +704,16 @@ export default function TutorProfile() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  <Button
-                    className="w-full btn-primary"
-                    onClick={handleBookSelected}
-                    data-testid="button-book-now"
-                  >
-                    <i className="fas fa-calendar-plus mr-2" />
-                    Book Now
-                  </Button>
+                  {user?.role !== "tutor" && (
+                    <Button
+                      className="w-full btn-primary"
+                      onClick={handleBookSelected}
+                      data-testid="button-book-now"
+                    >
+                      <i className="fas fa-calendar-plus mr-2" />
+                      Book Now
+                    </Button>
+                  )}
                   {/* You can also add "Open Chat" here if needed */}
                 </div>
               </CardContent>

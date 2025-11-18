@@ -190,6 +190,14 @@ export default function TutorBrowse() {
 
   /* --------------------------- Handlers --------------------------------------- */
   const handleBookSession = (tutor: TutorVM) => {
+    if (user?.role === "tutor") {
+      toast({
+        title: "Cannot book session",
+        description: "Only students can book sessions. Tutors cannot book sessions.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSelectedTutor(tutor);
     setShowBookingModal(true);
   };
