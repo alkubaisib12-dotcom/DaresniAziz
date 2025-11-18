@@ -21,6 +21,12 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  BarChart,
+  Bar,
+  Cell,
+  PieChart,
+  Pie,
+  Legend,
 } from "recharts";
 
 /* ---------- Types & helpers ---------- */
@@ -153,6 +159,68 @@ export default function TutorEarningsReport() {
     }
     return ids.size;
   }, [filteredSessions]);
+
+  // Earnings by subject
+  const earningsBySubject = useMemo(() => {
+    const map = new Map<string, {
+      name: string;
+      earnings: number;
+      sessions: number;
+      color: string
+    }>();
+
+    const colors = [
+      "hsl(var(--chart-1))",
+      "hsl(var(--chart-2))",
+      "hsl(var(--chart-3))",
+      "hsl(var(--chart-4))",
+      "hsl(var(--chart-5))",
+    ];
+
+    filteredSessions.forEach((s) => {
+      const subjectName = s.subject?.name || "Unknown Subject";
+      const amount = getSessionAmount(s);
+
+      const current = map.get(subjectName) || {
+        name: subjectName,
+        earnings: 0,
+        sessions: 0,
+        color: colors[map.size % colors.length]
+      };
+
+      current.earnings += amount;
+      current.sessions += 1;
+      map.set(subjectName, current);
+    });
+
+    return Array.from(map.values()).sort((a, b) => b.earnings - a.earnings);
+  }, [filteredSessions]);
+
+  // Success rate by status
+  const sessionsByStatus = useMemo(() => {
+    const allSessionsInRange = (Array.isArray(sessions) ? sessions : []).filter((s) => {
+      if (range === "all") return true;
+      const days = range === "30" ? 30 : range === "90" ? 90 : 365;
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const cutoff = new Date(now);
+      cutoff.setDate(now.getDate() - days + 1);
+      const dt = toDate(s.scheduledAt);
+      if (!dt) return false;
+      const d = new Date(dt);
+      d.setHours(0, 0, 0, 0);
+      return d >= cutoff && d <= now;
+    });
+
+    const statusCounts = {
+      completed: allSessionsInRange.filter(s => s.status === "completed").length,
+      cancelled: allSessionsInRange.filter(s => s.status === "cancelled").length,
+      scheduled: allSessionsInRange.filter(s => s.status === "scheduled").length,
+      in_progress: allSessionsInRange.filter(s => s.status === "in_progress").length,
+    };
+
+    return statusCounts;
+  }, [sessions, range]);
 
   // Chart data: daily points over the selected range (including 0 days)
   const chartData = useMemo(() => {
@@ -380,6 +448,163 @@ export default function TutorEarningsReport() {
           </CardContent>
         </Card>
 
+        {/* Session Success Rate */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>Session Status Overview</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid md:grid-cols-4 gap-4">
+              <div className="text-center p-4 bg-green-50 dark:bg-green-950 rounded-lg">
+                <div className="text-xs uppercase text-muted-foreground mb-1">
+                  Completed
+                </div>
+                <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                  {sessionsByStatus.completed}
+                </div>
+                <Badge variant="outline" className="mt-2 bg-green-100 dark:bg-green-900">
+                  <i className="fas fa-check-circle mr-1" />
+                  Successful
+                </Badge>
+              </div>
+              <div className="text-center p-4 bg-blue-50 dark:bg-blue-950 rounded-lg">
+                <div className="text-xs uppercase text-muted-foreground mb-1">
+                  Scheduled
+                </div>
+                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                  {sessionsByStatus.scheduled}
+                </div>
+                <Badge variant="outline" className="mt-2 bg-blue-100 dark:bg-blue-900">
+                  <i className="fas fa-calendar mr-1" />
+                  Upcoming
+                </Badge>
+              </div>
+              <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-950 rounded-lg">
+                <div className="text-xs uppercase text-muted-foreground mb-1">
+                  In Progress
+                </div>
+                <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
+                  {sessionsByStatus.in_progress}
+                </div>
+                <Badge variant="outline" className="mt-2 bg-yellow-100 dark:bg-yellow-900">
+                  <i className="fas fa-spinner mr-1" />
+                  Active
+                </Badge>
+              </div>
+              <div className="text-center p-4 bg-red-50 dark:bg-red-950 rounded-lg">
+                <div className="text-xs uppercase text-muted-foreground mb-1">
+                  Cancelled
+                </div>
+                <div className="text-2xl font-bold text-red-600 dark:text-red-400">
+                  {sessionsByStatus.cancelled}
+                </div>
+                <Badge variant="outline" className="mt-2 bg-red-100 dark:bg-red-900">
+                  <i className="fas fa-times-circle mr-1" />
+                  Cancelled
+                </Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Earnings by Subject */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>Earnings Breakdown by Subject</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {earningsBySubject.length === 0 ? (
+              <div className="text-center text-muted-foreground text-sm py-8">
+                No subject data available for this period.
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Bar Chart */}
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={earningsBySubject}
+                      margin={{ top: 10, right: 0, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis
+                        dataKey="name"
+                        tickLine={false}
+                        axisLine={false}
+                        fontSize={12}
+                      />
+                      <YAxis
+                        tickLine={false}
+                        axisLine={false}
+                        fontSize={12}
+                      />
+                      <Tooltip
+                        formatter={(value: any) => [
+                          formatMoney(Number(value)),
+                          "Earnings",
+                        ]}
+                      />
+                      <Bar dataKey="earnings" radius={[8, 8, 0, 0]}>
+                        {earningsBySubject.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Detailed Breakdown Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="border-b text-xs uppercase text-muted-foreground">
+                      <tr>
+                        <th className="py-2 text-left">Subject</th>
+                        <th className="py-2 text-right">Sessions</th>
+                        <th className="py-2 text-right">Total Earnings</th>
+                        <th className="py-2 text-right">Avg per Session</th>
+                        <th className="py-2 text-right">% of Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {earningsBySubject.map((subject, index) => {
+                        const avgPerSession = subject.earnings / subject.sessions;
+                        const percentage = totalEarnings > 0
+                          ? (subject.earnings / totalEarnings) * 100
+                          : 0;
+                        return (
+                          <tr key={index} className="border-b last:border-b-0">
+                            <td className="py-3">
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-3 h-3 rounded-full"
+                                  style={{ backgroundColor: subject.color }}
+                                />
+                                <span className="font-medium">{subject.name}</span>
+                              </div>
+                            </td>
+                            <td className="py-3 text-right">{subject.sessions}</td>
+                            <td className="py-3 text-right font-semibold">
+                              {formatMoney(subject.earnings)}
+                            </td>
+                            <td className="py-3 text-right text-muted-foreground">
+                              {formatMoney(avgPerSession)}
+                            </td>
+                            <td className="py-3 text-right">
+                              <Badge variant="outline">
+                                {percentage.toFixed(1)}%
+                              </Badge>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Students summary */}
         <div className="mb-6">
           <Badge variant="outline">
@@ -412,6 +637,7 @@ export default function TutorEarningsReport() {
                       <th className="py-2 text-left">Date</th>
                       <th className="py-2 text-left">Student</th>
                       <th className="py-2 text-left">Subject</th>
+                      <th className="py-2 text-center">Status</th>
                       <th className="py-2 text-right">Duration</th>
                       <th className="py-2 text-right">Amount</th>
                     </tr>
@@ -431,8 +657,17 @@ export default function TutorEarningsReport() {
                             {s.student?.firstName} {s.student?.lastName}
                           </td>
                           <td className="py-2">{s.subject?.name}</td>
+                          <td className="py-2 text-center">
+                            <Badge
+                              variant="outline"
+                              className="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
+                            >
+                              <i className="fas fa-check-circle mr-1" />
+                              Completed
+                            </Badge>
+                          </td>
                           <td className="py-2 text-right">{duration} min</td>
-                          <td className="py-2 text-right">
+                          <td className="py-2 text-right font-semibold">
                             {formatMoney(amount)}
                           </td>
                         </tr>
