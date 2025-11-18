@@ -234,6 +234,13 @@ export default function Navbar() {
                       <i className="fas fa-calendar mr-2" />
                       My Sessions
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => navigate("/student-reports")}
+                      data-testid="menu-item-student-reports"
+                    >
+                      <i className="fas fa-file-alt mr-2" />
+                      Lesson Reports
+                    </DropdownMenuItem>
                   </>
                 )}
 

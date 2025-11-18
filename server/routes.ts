@@ -1699,6 +1699,110 @@ app.get("/api/tutors/:id", async (req, res) => {
     }
   });
 
+  // === SESSION NOTES & AI SUMMARY ===
+  app.put("/api/sessions/:id/tutor-notes", requireUser, async (req, res) => {
+    try {
+      const user = req.user!;
+      const sessionId = req.params.id;
+      const { tutorNotes } = req.body as { tutorNotes: string };
+
+      if (!tutorNotes) {
+        return res.status(400).json({ message: "Tutor notes are required", fieldErrors: {} });
+      }
+
+      const ref = fdb!.collection("tutoring_sessions").doc(sessionId);
+      const snap = await ref.get();
+      if (!snap.exists) {
+        return res.status(404).json({ message: "Session not found", fieldErrors: {} });
+      }
+      const session = { id: snap.id, ...(snap.data() as any) } as any;
+
+      // Only the tutor can update notes
+      if (user.role === "tutor") {
+        const profSnap = await fdb!.collection("tutor_profiles").where("userId", "==", user.id).limit(1).get();
+        const tutorProfile = profSnap.empty ? null : ({ id: profSnap.docs[0].id, ...profSnap.docs[0].data() } as any);
+        if (!tutorProfile || session.tutorId !== tutorProfile.id) {
+          return res.status(403).json({ message: "Not authorized to update notes for this session", fieldErrors: {} });
+        }
+      } else if (user.role !== "admin") {
+        return res.status(403).json({ message: "Only tutors can update session notes", fieldErrors: {} });
+      }
+
+      await ref.set({ tutorNotes, updatedAt: now() }, { merge: true });
+      const updated = await ref.get();
+      res.json({ id: updated.id, ...updated.data() });
+    } catch (error) {
+      console.error("Error updating tutor notes:", error);
+      res.status(500).json({ message: "Failed to update tutor notes", fieldErrors: {} });
+    }
+  });
+
+  app.post("/api/sessions/:id/generate-summary", requireUser, async (req, res) => {
+    try {
+      const user = req.user!;
+      const sessionId = req.params.id;
+
+      const ref = fdb!.collection("tutoring_sessions").doc(sessionId);
+      const snap = await ref.get();
+      if (!snap.exists) {
+        return res.status(404).json({ message: "Session not found", fieldErrors: {} });
+      }
+      const session = { id: snap.id, ...(snap.data() as any) } as any;
+
+      // Only the tutor can generate summary
+      if (user.role === "tutor") {
+        const profSnap = await fdb!.collection("tutor_profiles").where("userId", "==", user.id).limit(1).get();
+        const tutorProfile = profSnap.empty ? null : ({ id: profSnap.docs[0].id, ...profSnap.docs[0].data() } as any);
+        if (!tutorProfile || session.tutorId !== tutorProfile.id) {
+          return res.status(403).json({ message: "Not authorized to generate summary for this session", fieldErrors: {} });
+        }
+      } else if (user.role !== "admin") {
+        return res.status(403).json({ message: "Only tutors can generate session summaries", fieldErrors: {} });
+      }
+
+      // Check if tutor notes exist
+      if (!session.tutorNotes || session.tutorNotes.trim() === "") {
+        return res.status(400).json({ message: "Tutor notes are required to generate a summary", fieldErrors: {} });
+      }
+
+      // Import the AI summary generator
+      const { generateLessonSummary } = await import("./ai-summary");
+
+      // Fetch additional context for better summary
+      const subjectSnap = await fdb!.collection("subjects").doc(session.subjectId).get();
+      const subject = subjectSnap.exists ? subjectSnap.data()?.name : undefined;
+
+      const studentSnap = await fdb!.collection("users").doc(session.studentId).get();
+      const studentName = studentSnap.exists ? studentSnap.data()?.name : undefined;
+
+      // Generate the AI summary
+      const aiSummary = await generateLessonSummary({
+        tutorNotes: session.tutorNotes,
+        subject,
+        studentName,
+        duration: session.duration,
+      });
+
+      // Save the summary to the session
+      await ref.set(
+        {
+          aiSummary: {
+            ...aiSummary,
+            generatedAt: now(),
+          },
+          updatedAt: now(),
+        },
+        { merge: true }
+      );
+
+      const updated = await ref.get();
+      res.json({ id: updated.id, ...updated.data() });
+    } catch (error) {
+      console.error("Error generating AI summary:", error);
+      res.status(500).json({ message: "Failed to generate summary. Please try again.", fieldErrors: {} });
+    }
+  });
+
   // === REVIEWS ===
   app.get("/api/reviews/:tutorId", async (req, res) => {
     try {

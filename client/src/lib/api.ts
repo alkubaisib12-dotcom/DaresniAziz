@@ -52,6 +52,16 @@ export type ApiSession = {
   notes?: string;
   priceCents?: number;
 
+  // AI-Generated Lesson Summary fields
+  tutorNotes?: string;
+  aiSummary?: {
+    whatWasLearned: string;
+    mistakes: string;
+    strengths: string;
+    practiceTasks: string;
+    generatedAt?: any;
+  };
+
   // role-shaped joins coming from /api/sessions
   tutor?: (ApiTutorProfile & { user?: ApiUser }) | null;
   student?: ApiUser | null;
@@ -60,6 +70,20 @@ export type ApiSession = {
 
 export async function fetchSessions(limit = 50) {
   return api<ApiSession[]>(`/api/sessions?limit=${limit}`);
+}
+
+export async function updateTutorNotes(sessionId: string, tutorNotes: string) {
+  return api<ApiSession>(`/api/sessions/${sessionId}/tutor-notes`, {
+    method: "PUT",
+    body: JSON.stringify({ tutorNotes }),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export async function generateAISummary(sessionId: string) {
+  return api<ApiSession>(`/api/sessions/${sessionId}/generate-summary`, {
+    method: "POST",
+  });
 }
 
 // ---- Notifications ----
