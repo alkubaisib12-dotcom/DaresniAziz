@@ -178,6 +178,34 @@ export function SessionCard({ session, userRole, onChat, onAction }: SessionCard
 
               </div>
 
+              {/* Calendar-style time blocks display */}
+              {session.timeSlots && session.timeSlots.length > 1 && (
+                <div className="mt-2">
+                  <div className="text-xs text-muted-foreground mb-1">
+                    <i className="fas fa-calendar-check text-xs mr-1" />
+                    Booked time slots:
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {session.timeSlots.map((slot: string, index: number) => {
+                      // Calculate end time for each slot (assuming 60-minute slots)
+                      const [hours, minutes] = slot.split(":").map(Number);
+                      const endHours = hours + 1;
+                      const endTime = `${String(endHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+
+                      return (
+                        <Badge
+                          key={index}
+                          variant="outline"
+                          className="bg-primary/5 text-primary border-primary/20 text-xs"
+                        >
+                          {slot} - {endTime}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {session.notes && (
                 <p className="text-sm text-muted-foreground mt-1 truncate">
                   <i className="fas fa-sticky-note text-xs mr-1" />

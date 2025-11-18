@@ -1454,6 +1454,7 @@ app.get("/api/tutors/:id", async (req, res) => {
         subjectId: body.subjectId,
         scheduledAt: sesStart,
         duration,
+        timeSlots: req.body.timeSlots || [], // Store individual time slots
         status: "pending", // Start as pending
         notes: req.body.notes || "",
         meetingLink: req.body.meetingLink || null,
