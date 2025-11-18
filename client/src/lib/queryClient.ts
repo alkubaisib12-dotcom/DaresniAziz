@@ -3,6 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 // Default fetcher for React Query that includes error handling
 export async function apiRequest(url: string, options: RequestInit = {}) {
   const response = await fetch(url, {
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...options.headers,
