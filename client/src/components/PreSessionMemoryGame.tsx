@@ -337,7 +337,7 @@ function GameBoard({
       </div>
 
       {/* Game Board */}
-      <div className="p-4 overflow-y-auto max-h-[440px]">
+      <div className="p-4">
         {hasWon ? (
           <div className="text-center py-8 space-y-4">
             <div className="text-6xl">🎉</div>
@@ -453,9 +453,9 @@ function MemoryGamePanel({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed bottom-24 right-6 w-[420px] max-h-[650px] bg-background border-2 border-primary rounded-lg shadow-2xl overflow-hidden z-50 animate-in slide-in-from-bottom-4 duration-300">
+    <div className="fixed bottom-24 right-6 w-[420px] max-h-[85vh] bg-background border-2 border-primary rounded-lg shadow-2xl overflow-hidden z-50 animate-in slide-in-from-bottom-4 duration-300 flex flex-col">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary to-primary/80 text-white p-4 flex items-center justify-between">
+      <div className="bg-gradient-to-r from-primary to-primary/80 text-white p-4 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center space-x-2">
           <i className="fas fa-brain text-xl" />
           <h3 className="font-bold text-lg">Memory Match</h3>
@@ -473,12 +473,14 @@ function MemoryGamePanel({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      {/* Content */}
-      {gameSettings === null ? (
-        <StartScreen onStart={handleStart} />
-      ) : (
-        <GameBoard settings={gameSettings} onRestart={handleRestart} />
-      )}
+      {/* Content - Scrollable */}
+      <div className="overflow-y-auto flex-1">
+        {gameSettings === null ? (
+          <StartScreen onStart={handleStart} />
+        ) : (
+          <GameBoard settings={gameSettings} onRestart={handleRestart} />
+        )}
+      </div>
     </div>
   );
 }
@@ -487,16 +489,7 @@ export default function PreSessionMemoryGame() {
   const [isOpen, setIsOpen] = useState(false);
   const [showBubble, setShowBubble] = useState(true);
 
-  // Check session storage on mount
-  useEffect(() => {
-    const hidden = sessionStorage.getItem("memoryGameBubbleHidden");
-    if (hidden === "true") {
-      setShowBubble(false);
-    }
-  }, []);
-
   const handleHideBubble = () => {
-    sessionStorage.setItem("memoryGameBubbleHidden", "true");
     setShowBubble(false);
     setIsOpen(false);
   };
