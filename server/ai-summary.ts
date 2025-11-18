@@ -4,6 +4,11 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // Get your free API key from: https://makersuite.google.com/app/apikey
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+// Available models list for reference:
+// - "gemini-1.5-flash-latest" (recommended for speed)
+// - "gemini-1.5-pro-latest" (recommended for quality)
+// - "gemini-1.0-pro" (legacy, but widely supported)
+
 export interface LessonSummaryInput {
   tutorNotes: string;
   subject?: string;
@@ -52,8 +57,14 @@ Please generate a structured summary with exactly these four sections:
 
 Format your response as a JSON object with these exact keys: "whatWasLearned", "mistakes", "strengths", "practiceTasks". Each value should be a clear, well-formatted string (you can use markdown formatting like bullet points).`;
 
-  // Use Gemini Pro (free tier - 60 requests per minute)
-  const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+  // Try multiple model names in order of preference
+  // Start with the most widely available model
+  let model;
+  try {
+    model = genAI.getGenerativeModel({ model: "gemini-pro" });
+  } catch (e) {
+    throw new Error("Unable to initialize Gemini AI model. Please check your API key.");
+  }
 
   try {
     const result = await model.generateContent(prompt);
