@@ -11,7 +11,7 @@ import { useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/components/AuthProvider";
-import { Phone, GraduationCap, Briefcase, DollarSign, FileText, Award } from "lucide-react";
+import { Phone, GraduationCap, Briefcase, DollarSign, FileText, Award, Upload, X, FileCheck } from "lucide-react";
 
 // NEW: Load subjects from Firestore instead of API
 import { db } from "@/lib/firebase";
@@ -43,7 +43,11 @@ export default function CompleteTutorProfile() {
     education: "",
     certifications: "",
     subjects: [] as string[],
+    subjectPricing: {} as Record<string, string>, // subject-specific pricing
+    certificationFiles: [] as Array<{ url: string; name: string }>,
   });
+
+  const [uploadingCert, setUploadingCert] = useState(false);
 
   // 1) If tutor profile exists, route accordingly
   const { data: existingProfile, isLoading: profileLoading } = useQuery<TutorProfileShape>({
@@ -102,15 +106,23 @@ export default function CompleteTutorProfile() {
         body: JSON.stringify({ role: "tutor" }),
       });
 
+      // Convert subject pricing from strings to numbers
+      const subjectPricing: Record<string, number> = {};
+      for (const subjectId of formData.subjects) {
+        const price = Number(formData.subjectPricing[subjectId]) || 0;
+        if (price > 0) {
+          subjectPricing[subjectId] = price;
+        }
+      }
+
       const payload = {
         phone: formData.phone.trim(),
         bio: formData.bio.trim(),
-        hourlyRate: Number(formData.hourlyRate) || 0,
+        hourlyRate: Number(formData.hourlyRate) || 0, // Keep for backward compatibility
+        subjectPricing,
         experience: formData.experience.trim(),
         education: formData.education.trim(),
-        certifications: formData.certifications
-          ? formData.certifications.split(",").map((c) => c.trim()).filter(Boolean)
-          : [],
+        certifications: formData.certificationFiles,
         subjects: formData.subjects,
         // initial verification status
         isVerified: false,
@@ -153,7 +165,7 @@ export default function CompleteTutorProfile() {
     e.preventDefault();
 
     // Validation
-    if (!formData.phone || !formData.bio || !formData.hourlyRate || !formData.experience || !formData.education) {
+    if (!formData.phone || !formData.bio || !formData.experience || !formData.education) {
       toast({
         title: "Missing information",
         description: "Please fill in all required fields.",
@@ -178,6 +190,19 @@ export default function CompleteTutorProfile() {
       return;
     }
 
+    // Validate that all selected subjects have pricing
+    const missingPricing = formData.subjects.filter(
+      (subjectId) => !formData.subjectPricing[subjectId] || Number(formData.subjectPricing[subjectId]) <= 0
+    );
+    if (missingPricing.length > 0) {
+      toast({
+        title: "Missing pricing",
+        description: "Please set an hourly rate for all selected subjects.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     updateProfileMutation.mutate();
   };
 
@@ -186,6 +211,71 @@ export default function CompleteTutorProfile() {
     setFormData((prev) => ({
       ...prev,
       subjects: isChecked ? [...prev.subjects, subjectId] : prev.subjects.filter((id) => id !== subjectId),
+    }));
+  };
+
+  const handleSubjectPriceChange = (subjectId: string, price: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      subjectPricing: {
+        ...prev.subjectPricing,
+        [subjectId]: price,
+      },
+    }));
+  };
+
+  const handleCertificationUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadingCert(true);
+    try {
+      const uploadPromises = Array.from(files).map(async (file) => {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const response = await fetch("/api/upload-certification", {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || "Upload failed");
+        }
+
+        const data = await response.json();
+        return { url: data.url, name: data.fileName || file.name };
+      });
+
+      const uploadedFiles = await Promise.all(uploadPromises);
+
+      setFormData((prev) => ({
+        ...prev,
+        certificationFiles: [...prev.certificationFiles, ...uploadedFiles],
+      }));
+
+      toast({
+        title: "Success",
+        description: `${uploadedFiles.length} certification(s) uploaded successfully`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Upload failed",
+        description: error.message || "Failed to upload certification files",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingCert(false);
+      e.target.value = ""; // Reset input
+    }
+  };
+
+  const removeCertification = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      certificationFiles: prev.certificationFiles.filter((_, i) => i !== index),
     }));
   };
 
@@ -301,21 +391,39 @@ export default function CompleteTutorProfile() {
                 </div>
               </div>
 
-              {/* Subjects */}
+              {/* Subjects with Pricing */}
               <div className="space-y-4">
-                <h3 className="text-xl font-semibold">Subjects I Can Teach *</h3>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <h3 className="text-xl font-semibold">Subjects & Pricing *</h3>
+                <p className="text-sm text-muted-foreground">Select subjects you can teach and set your hourly rate for each</p>
+                <div className="space-y-3">
                   {subjects.map((subject) => (
-                    <div key={subject.id} className="flex items-center space-x-2">
+                    <div key={subject.id} className="flex items-center gap-3 p-3 border rounded-lg">
                       <Checkbox
                         id={subject.id}
                         checked={formData.subjects.includes(subject.id)}
                         onCheckedChange={(checked) => handleSubjectChange(subject.id, checked)}
                         data-testid={`checkbox-subject-${subject.id}`}
                       />
-                      <Label htmlFor={subject.id} className="text-sm cursor-pointer">
+                      <Label htmlFor={subject.id} className="flex-1 cursor-pointer font-medium">
                         {subject.name}
                       </Label>
+                      {formData.subjects.includes(subject.id) && (
+                        <div className="flex items-center gap-2">
+                          <DollarSign className="h-4 w-4 text-muted-foreground" />
+                          <Input
+                            type="number"
+                            placeholder="Price/hr"
+                            value={formData.subjectPricing[subject.id] || ""}
+                            onChange={(e) => handleSubjectPriceChange(subject.id, e.target.value)}
+                            className="w-24"
+                            min={5}
+                            max={200}
+                            step="1"
+                            required
+                          />
+                          <span className="text-sm text-muted-foreground">BHD/hr</span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -343,17 +451,50 @@ export default function CompleteTutorProfile() {
 
                 <div className="space-y-2">
                   <Label htmlFor="certifications">Certifications & Awards (Optional)</Label>
-                  <div className="relative">
-                    <Award className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Textarea
-                      id="certifications"
-                      placeholder="Comma-separated list (e.g., TEFL, PMP, Award XYZ)"
-                      value={formData.certifications}
-                      onChange={(e) => setFormData((p) => ({ ...p, certifications: e.target.value }))}
-                      className="min-h-[80px] pl-10"
-                      data-testid="textarea-certifications"
+                  <p className="text-xs text-muted-foreground">Upload PDF or image files of your certifications (max 10MB per file)</p>
+
+                  <div className="border-2 border-dashed rounded-lg p-4 text-center">
+                    <input
+                      type="file"
+                      id="cert-upload"
+                      className="hidden"
+                      accept=".pdf,image/*"
+                      multiple
+                      onChange={handleCertificationUpload}
+                      disabled={uploadingCert}
                     />
+                    <label htmlFor="cert-upload" className="cursor-pointer">
+                      <div className="flex flex-col items-center gap-2">
+                        <Upload className="h-8 w-8 text-muted-foreground" />
+                        <div>
+                          <span className="text-sm font-medium text-primary hover:underline">
+                            {uploadingCert ? "Uploading..." : "Click to upload certifications"}
+                          </span>
+                          <p className="text-xs text-muted-foreground">PDF or images accepted</p>
+                        </div>
+                      </div>
+                    </label>
                   </div>
+
+                  {formData.certificationFiles.length > 0 && (
+                    <div className="space-y-2">
+                      {formData.certificationFiles.map((cert, index) => (
+                        <div key={index} className="flex items-center gap-2 p-2 bg-secondary rounded-lg">
+                          <FileCheck className="h-4 w-4 text-green-600" />
+                          <span className="flex-1 text-sm truncate">{cert.name}</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeCertification(index)}
+                            className="h-6 w-6 p-0"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -16,7 +17,7 @@ import { SessionCard } from "@/components/SessionCard";
 import { ChatWindow } from "@/components/ChatWindow";
 import { Switch } from "@/components/ui/switch";
 import { useLocation } from "wouter";
-import { Calendar, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { Calendar, Clock, CheckCircle, XCircle, AlertCircle, Save, Trash2, Download } from "lucide-react";
 import { format } from "date-fns";
 import { formatMoney } from "@/lib/currency";
 
@@ -112,6 +113,14 @@ export default function TutorDashboard() {
   // Availability dialog state
   const [showAvailability, setShowAvailability] = useState(false);
   const [week, setWeek] = useState<Record<string, DayAvailability>>(emptyWeek());
+  const [templateName, setTemplateName] = useState("");
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+
+  // Fetch schedule templates
+  const { data: scheduleTemplates = [] } = useQuery<Array<{ id: string; name: string; availability: any; createdAt: any }>>({
+    queryKey: ["/api/tutors/schedule-templates"],
+    enabled: !!user && user.role === "tutor",
+  });
 
   // redirect unauthenticated
   useEffect(() => {
@@ -173,8 +182,9 @@ export default function TutorDashboard() {
         method: "PUT",
         body: JSON.stringify({ status }),
       }),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
+    onSuccess: async (_, variables) => {
+      // Force refetch instead of just invalidate
+      await queryClient.refetchQueries({ queryKey: ["/api/sessions"] });
       toast({
         title: "Success",
         description:
@@ -201,6 +211,36 @@ export default function TutorDashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/tutors/profile"] });
       setShowAvailability(false);
       toast({ title: "Availability saved", description: "Your schedule has been updated." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const saveTemplateMutation = useMutation({
+    mutationFn: async ({ name, availability }: { name: string; availability: any }) =>
+      apiRequest("/api/tutors/schedule-templates", {
+        method: "POST",
+        body: JSON.stringify({ name, availability }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tutors/schedule-templates"] });
+      setShowSaveTemplate(false);
+      setTemplateName("");
+      toast({ title: "Template saved", description: "Your schedule template has been saved." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteTemplateMutation = useMutation({
+    mutationFn: async (templateId: string) =>
+      apiRequest(`/api/tutors/schedule-templates/${templateId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tutors/schedule-templates"] });
+      toast({ title: "Template deleted", description: "Schedule template has been removed." });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -298,6 +338,37 @@ export default function TutorDashboard() {
 
   const handleReject = (sessionId: string) => {
     updateSessionMutation.mutate({ sessionId, status: "cancelled" });
+  };
+
+  const handleLoadTemplate = (template: any) => {
+    const seeded = emptyWeek();
+    const src = template.availability as Record<string, any>;
+    for (const k of Object.keys(src)) {
+      if (seeded[k]) {
+        seeded[k] = {
+          isAvailable: !!src[k].isAvailable,
+          startTime: src[k].startTime ?? "09:00",
+          endTime: src[k].endTime ?? "17:00",
+        };
+      }
+    }
+    setWeek(seeded);
+    toast({
+      title: "Template loaded",
+      description: `Loaded schedule template: ${template.name}`,
+    });
+  };
+
+  const handleSaveTemplate = () => {
+    if (!templateName.trim()) {
+      toast({
+        title: "Template name required",
+        description: "Please enter a name for this template",
+        variant: "destructive",
+      });
+      return;
+    }
+    saveTemplateMutation.mutate({ name: templateName, availability: week });
   };
 
   /** Pending Session Card Component */
@@ -683,6 +754,93 @@ export default function TutorDashboard() {
           </DialogHeader>
 
           <div className="space-y-5">
+            {/* Schedule Templates */}
+            {scheduleTemplates.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-medium">Saved Templates</h4>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowSaveTemplate(!showSaveTemplate)}
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Current
+                  </Button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {scheduleTemplates.map((template) => (
+                    <div
+                      key={template.id}
+                      className="flex items-center justify-between p-2 border rounded-md bg-secondary/50"
+                    >
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleLoadTemplate(template)}
+                        className="flex-1 justify-start"
+                      >
+                        <Download className="h-3 w-3 mr-2" />
+                        {template.name}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => deleteTemplateMutation.mutate(template.id)}
+                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Save template form */}
+            {showSaveTemplate && (
+              <div className="p-3 border rounded-lg bg-secondary/30 space-y-2">
+                <Label htmlFor="template-name">Template Name</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="template-name"
+                    placeholder="e.g., My Regular Schedule"
+                    value={templateName}
+                    onChange={(e) => setTemplateName(e.target.value)}
+                  />
+                  <Button
+                    onClick={handleSaveTemplate}
+                    disabled={saveTemplateMutation.isPending}
+                    size="sm"
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowSaveTemplate(false);
+                      setTemplateName("");
+                    }}
+                    size="sm"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {scheduleTemplates.length === 0 && !showSaveTemplate && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowSaveTemplate(true)}
+                className="w-full"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                Save Current Schedule as Template
+              </Button>
+            )}
+
             {/* quick presets */}
             <div className="flex flex-wrap gap-2">
               <Button
