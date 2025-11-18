@@ -23,6 +23,11 @@ export function TutorCard({
   const { user } = useAuth();
   const hourlyRate = Number(tutor?.hourlyRate ?? 0);
 
+  // AI matching data
+  const aiScore = tutor?.aiScore;
+  const aiReasoning = tutor?.aiReasoning ?? [];
+  const hasAIMatch = aiScore !== undefined && aiScore > 0;
+
   // Be flexible with backend field names
   const rawAverageRating =
     tutor?.averageRating ??
@@ -62,8 +67,21 @@ export function TutorCard({
   const hasReviews = totalReviews > 0 && averageRating > 0;
 
   return (
-    <Card className="card-hover h-full" data-testid={`tutor-card-${tutor?.id ?? "unknown"}`}>
+    <Card
+      className={`card-hover h-full ${hasAIMatch ? 'border-2 border-primary shadow-lg' : ''}`}
+      data-testid={`tutor-card-${tutor?.id ?? "unknown"}`}
+    >
       <CardContent className="p-6 h-full flex flex-col">
+        {/* AI Match Badge */}
+        {hasAIMatch && (
+          <div className="mb-3 flex items-center justify-between">
+            <Badge className="bg-gradient-to-r from-purple-500 to-pink-500 text-white">
+              <i className="fas fa-star mr-1" />
+              AI Match: {aiScore?.toFixed(0)}% Perfect
+            </Badge>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-start space-x-4 mb-4">
           <Avatar className="w-16 h-16">
@@ -157,6 +175,29 @@ export function TutorCard({
               <i className="fas fa-check-circle mr-1" />
               Verified Tutor
             </Badge>
+          </div>
+        )}
+
+        {/* AI Match Reasoning */}
+        {hasAIMatch && aiReasoning.length > 0 && (
+          <div className="mb-4 p-3 bg-primary/5 rounded-lg border border-primary/20">
+            <div className="text-xs font-semibold text-primary mb-2 flex items-center">
+              <i className="fas fa-lightbulb mr-2" />
+              Why this tutor is a great match:
+            </div>
+            <ul className="space-y-1">
+              {aiReasoning.slice(0, 3).map((reason, idx) => (
+                <li key={idx} className="text-xs text-muted-foreground flex items-start">
+                  <i className="fas fa-check-circle text-primary mr-2 mt-0.5 text-[10px]" />
+                  <span>{reason}</span>
+                </li>
+              ))}
+            </ul>
+            {aiReasoning.length > 3 && (
+              <p className="text-xs text-muted-foreground mt-2 italic">
+                +{aiReasoning.length - 3} more reasons...
+              </p>
+            )}
           </div>
         )}
 
