@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar, Clock, User as UserIcon, Video, BookOpen } from "lucide-react";
 
 import { fetchSessions, ApiSession } from "@/lib/api";
+import { formatMoney } from "@/lib/currency";
 
 // -------- Helpers --------
 function coerceToDate(v: any): Date {
@@ -186,8 +187,7 @@ export default function MySessions() {
 
                           {typeof s.priceCents === "number" && (
                             <div className="flex items-center gap-2 text-muted-foreground">
-                              <i className="fas fa-dollar-sign" />
-                              <span>${(s.priceCents / 100).toFixed(2)}</span>
+                              <span>{formatMoney(s.priceCents / 100)}</span>
                             </div>
                           )}
                         </div>
