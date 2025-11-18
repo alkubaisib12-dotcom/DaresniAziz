@@ -7,6 +7,7 @@ import { AuthModal } from "@/components/AuthModal";
 import { BookOpen, Users, Clock, Star, ChevronRight } from "lucide-react";
 import type { Subject, TutorProfile, User, Review } from "@shared/schema";
 import { formatMoney } from "@/lib/currency";
+import { useAuth } from "@/hooks/useAuth";
 
 const subjectIcons: Record<string, string> = {
   Mathematics: "fas fa-calculator",
@@ -29,6 +30,7 @@ type TutorWithDetails = TutorProfile & {
 };
 
 export default function Landing() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"student" | "tutor" | "admin">(
     "student",
   );
@@ -396,14 +398,16 @@ export default function Landing() {
                       )}
 
                       <div className="flex space-x-2">
-                        <Button
-                          className="btn-primary flex-1"
-                          onClick={handleLogin}
-                          data-testid={`button-book-session-${tutor.id}`}
-                        >
-                          <i className="fas fa-calendar-plus mr-2" />
-                          Book Session
-                        </Button>
+                        {user?.role !== "tutor" && (
+                          <Button
+                            className="btn-primary flex-1"
+                            onClick={handleLogin}
+                            data-testid={`button-book-session-${tutor.id}`}
+                          >
+                            <i className="fas fa-calendar-plus mr-2" />
+                            Book Session
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="icon"
