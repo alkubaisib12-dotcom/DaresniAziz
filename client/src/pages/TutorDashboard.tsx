@@ -16,6 +16,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { SessionCard } from "@/components/SessionCard";
 import { ChatWindow } from "@/components/ChatWindow";
 import { Switch } from "@/components/ui/switch";
+import TutorAnalyticsSection from "@/components/TutorAnalyticsSection";
 import { useLocation } from "wouter";
 import { Calendar, Clock, CheckCircle, XCircle, AlertCircle, Save, Trash2, Download } from "lucide-react";
 import { format } from "date-fns";
@@ -770,6 +771,11 @@ export default function TutorDashboard() {
               </CardContent>
             </Card>
           </div>
+        </div>
+
+        {/* Enhanced Analytics Section */}
+        <div className="mt-12">
+          <TutorAnalyticsSection sessions={Array.isArray(sessions) ? sessions : []} />
         </div>
       </div>
 
