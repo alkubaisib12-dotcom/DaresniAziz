@@ -21,7 +21,21 @@ export function TutorCard({
   isFavorite = false,
 }: TutorCardProps) {
   const { user } = useAuth();
-  const hourlyRate = Number(tutor?.hourlyRate ?? 0);
+
+  // Calculate minimum price from subject-specific pricing if available
+  const getMinimumPrice = () => {
+    const subjectPricing = tutor?.subjectPricing;
+    if (subjectPricing && typeof subjectPricing === 'object') {
+      const prices = Object.values(subjectPricing).map(p => Number(p)).filter(p => p > 0);
+      if (prices.length > 0) {
+        return Math.min(...prices);
+      }
+    }
+    return Number(tutor?.hourlyRate ?? 0);
+  };
+
+  const hourlyRate = getMinimumPrice();
+  const hasMultiplePrices = tutor?.subjectPricing && Object.keys(tutor.subjectPricing).length > 1;
 
   // AI matching data
   const aiScore = tutor?.aiScore;
@@ -129,8 +143,9 @@ export function TutorCard({
           {/* Price and Status */}
           <div className="text-right">
             <div className="text-lg font-bold text-primary" data-testid="text-hourly-rate">
-  {formatMoney(hourlyRate)}/hr
-</div>
+              {hasMultiplePrices && <span className="text-xs font-normal">from </span>}
+              {formatMoney(hourlyRate)}/hr
+            </div>
 
             <div className="flex items-center justify-end mt-1">
               <div

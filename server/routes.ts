@@ -1963,9 +1963,10 @@ app.get("/api/tutors/:id", async (req, res) => {
 
       const updated = await ref.get();
       res.json({ id: updated.id, ...updated.data() });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error generating AI summary:", error);
-      res.status(500).json({ message: "Failed to generate summary. Please try again.", fieldErrors: {} });
+      const errorMessage = error?.message || "Failed to generate summary. Please try again.";
+      res.status(500).json({ message: errorMessage, fieldErrors: {} });
     }
   });
 
