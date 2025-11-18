@@ -18,12 +18,16 @@ const updateTutorProfileSchema = z.object({
   bio: z.string().min(1).optional(),
   phone: z.string().min(5).optional(),
   hourlyRate: z.number().nonnegative().optional(),
+  subjectPricing: z.record(z.string(), z.number().nonnegative()).optional(), // subject-specific pricing
   subjects: z.array(z.string()).optional(),
 
   // extra profile fields
   education: z.string().min(1).optional(),
   experience: z.string().min(1).optional(),
-  certifications: z.array(z.string()).optional(),
+  certifications: z.array(z.object({
+    url: z.string(),
+    name: z.string(),
+  })).optional(),
 
   // weekly availability (mon..sun) -> { isAvailable, startTime, endTime }
   availability: z
@@ -491,6 +495,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   });
 
+  // Upload handler for certifications (PDF support)
+  const certUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB for PDFs
+    fileFilter: (_req, file, cb) => {
+      if (file.mimetype === "application/pdf" || file.mimetype.startsWith("image/")) {
+        cb(null, true);
+      } else {
+        cb(new Error("Only PDF and image files are allowed"));
+      }
+    },
+  });
+
   app.post("/api/upload", requireUser, upload.single("file"), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ message: "No file uploaded" });
@@ -510,6 +527,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res
         .status(500)
         .json({ message: "Failed to upload file", error: error instanceof Error ? error.message : "Unknown" });
+    }
+  });
+
+  // Upload certification files (PDF + images)
+  app.post("/api/upload-certification", requireUser, certUpload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
+      const user = req.user!;
+      const file = req.file;
+      const fileExt = path.extname(file.originalname);
+      const fileName = `cert-${user.id}-${Date.now()}${fileExt}`;
+      await fs.promises.mkdir(uploadsDir, { recursive: true });
+      const filePath = path.join(uploadsDir, fileName);
+      await fs.promises.writeFile(filePath, file.buffer);
+      const fileUrl = `/uploads/${fileName}`;
+
+      res.json({ url: fileUrl, message: "Certification uploaded successfully", fileName: file.originalname });
+    } catch (error) {
+      console.error("Certification upload error:", error);
+      res
+        .status(500)
+        .json({ message: "Failed to upload certification", error: error instanceof Error ? error.message : "Unknown" });
     }
   });
 
@@ -777,6 +817,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         res.status(500).json({ message: "Failed to update tutor profile", fieldErrors: {} });
       }
+    }
+  });
+
+  /* =========================
+     Schedule Templates
+     ========================= */
+
+  // Get all schedule templates for current tutor
+  app.get("/api/tutors/schedule-templates", requireUser, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "tutor") {
+        return res.status(403).json({ message: "Only tutors can access schedule templates" });
+      }
+
+      const templates = await listCollection<any>(
+        "schedule_templates",
+        [["userId", "==", user.id]],
+        ["createdAt", "desc"]
+      );
+
+      res.json(templates);
+    } catch (error) {
+      console.error("Error fetching schedule templates:", error);
+      res.status(500).json({ message: "Failed to fetch schedule templates" });
+    }
+  });
+
+  // Save a new schedule template
+  app.post("/api/tutors/schedule-templates", requireUser, async (req, res) => {
+    try {
+      const user = req.user!;
+      if (user.role !== "tutor") {
+        return res.status(403).json({ message: "Only tutors can save schedule templates" });
+      }
+
+      const { name, availability } = req.body;
+      if (!name || !availability) {
+        return res.status(400).json({ message: "Name and availability are required" });
+      }
+
+      const templateRef = await fdb!.collection("schedule_templates").add({
+        userId: user.id,
+        name: name.trim(),
+        availability,
+        createdAt: now(),
+      });
+
+      const template = await templateRef.get();
+      res.json({ id: template.id, ...template.data() });
+    } catch (error) {
+      console.error("Error saving schedule template:", error);
+      res.status(500).json({ message: "Failed to save schedule template" });
+    }
+  });
+
+  // Delete a schedule template
+  app.delete("/api/tutors/schedule-templates/:id", requireUser, async (req, res) => {
+    try {
+      const user = req.user!;
+      const { id } = req.params;
+
+      const templateDoc = await getDoc<any>("schedule_templates", id);
+      if (!templateDoc) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+
+      if (templateDoc.userId !== user.id) {
+        return res.status(403).json({ message: "You can only delete your own templates" });
+      }
+
+      await fdb!.collection("schedule_templates").doc(id).delete();
+      res.json({ message: "Template deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting schedule template:", error);
+      res.status(500).json({ message: "Failed to delete schedule template" });
     }
   });
 

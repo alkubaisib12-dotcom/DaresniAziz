@@ -48,7 +48,10 @@ export interface TutorProfile {
   id: string;                 // Firestore doc id for the tutor profile
   userId: string;             // references User.id (Firebase UID)
   bio?: string;
-  hourlyRate?: number;        // e.g., 15 (your currency unit)
+  hourlyRate?: number;        // e.g., 15 (your currency unit) - DEPRECATED: use subjectPricing instead
+  subjectPricing?: {          // pricing per subject
+    [subjectId: string]: number; // subjectId -> price
+  };
   subjects?: string[];        // array of Subject.id
   availability?: {
     [day: string]: {          // e.g., "monday", "tuesday", ...
@@ -57,6 +60,10 @@ export interface TutorProfile {
       isAvailable: boolean;
     };
   };
+  certifications?: Array<{    // certification files
+    url: string;
+    name: string;
+  }>;
   verified?: boolean;
   rating?: number;
   totalReviews?: number;

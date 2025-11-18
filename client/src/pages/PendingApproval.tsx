@@ -40,11 +40,20 @@ export default function PendingApproval() {
     queryKey: ["/api/tutors/profile"],
     enabled: !!user && user.role === "tutor",
     queryFn: async () => {
-      const res = await apiRequest("/api/tutors/profile");
-      if (res.status === 404) return null;
-      if (!res.ok) throw new Error("Failed to load profile");
-      const data = await res.json();
-      return data;
+      try {
+        const data = await apiRequest("/api/tutors/profile", {
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          },
+          cache: 'no-store' as RequestCache
+        });
+        return data;
+      } catch (error: any) {
+        if (error.message.includes('404')) return null;
+        throw error;
+      }
     },
     select: (p: any) => {
       if (!p) return null;
@@ -52,6 +61,7 @@ export default function PendingApproval() {
       return { ...p, __approved: approved };
     },
     staleTime: 0,
+    gcTime: 0, // Don't cache results
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
     refetchInterval: (data) => {
