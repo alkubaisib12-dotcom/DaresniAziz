@@ -64,6 +64,32 @@ export default function CompleteSignup() {
     }
   }, [authLoading, user, setLocation]);
 
+  // Prevent back button navigation - lock user on this page until signup is complete
+  useEffect(() => {
+    if (authLoading || !user || user.role) return;
+
+    // Push a new state to history to trap the user
+    window.history.pushState(null, "", window.location.href);
+
+    const handlePopState = (e: PopStateEvent) => {
+      // Prevent navigation away - immediately push forward again
+      window.history.pushState(null, "", window.location.href);
+
+      toast({
+        title: "Complete Your Profile",
+        description: "Please complete your signup before navigating away.",
+        variant: "destructive",
+        duration: 3000,
+      });
+    };
+
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [authLoading, user, toast]);
+
   const { data: subjects = [] } = useQuery<Subject[]>({
     queryKey: ["/api/subjects"],
     enabled: selectedRole === "tutor",
