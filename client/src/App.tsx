@@ -67,6 +67,15 @@ function AuthRouteGate() {
     const onTutorArea = path.startsWith("/tutor-") || at("/tutor-dashboard");
     const onAdminArea = at("/admin") || at("/admin-setup");
 
+    // ------- INCOMPLETE SIGNUP LOCKDOWN -------
+    // Users with role: null MUST complete signup before accessing anything else
+    if (user.role === null || user.role === undefined) {
+      if (!at("/complete-signup")) {
+        navigate("/complete-signup", { replace: true });
+      }
+      return; // Block all other navigation until role is chosen
+    }
+
     // ------- ADMIN FIRST -------
     if (user.role === "admin") {
       // From entry / student / tutor / pending / complete-tutor-profile -> push to /admin
