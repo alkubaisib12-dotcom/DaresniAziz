@@ -57,14 +57,8 @@ Please generate a structured summary with exactly these four sections:
 
 Format your response as a JSON object with these exact keys: "whatWasLearned", "mistakes", "strengths", "practiceTasks". Each value should be a clear, well-formatted string (you can use markdown formatting like bullet points).`;
 
-  // Try multiple model names in order of preference
-  // Start with the most widely available model
-  let model;
-  try {
-    model = genAI.getGenerativeModel({ model: "gemini-pro" });
-  } catch (e) {
-    throw new Error("Unable to initialize Gemini AI model. Please check your API key.");
-  }
+  // Use Gemini 1.0 Pro - the stable, widely supported model
+  const model = genAI.getGenerativeModel({ model: "gemini-1.0-pro" });
 
   try {
     const result = await model.generateContent(prompt);
