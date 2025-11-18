@@ -1,10 +1,12 @@
 // client/src/components/SessionCard.tsx
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { format } from "date-fns";
 import { formatMoney } from "@/lib/currency";
+import { LessonSummaryDialog } from "./LessonSummaryDialog";
 
 interface SessionCardProps {
   session: any;
@@ -52,6 +54,8 @@ function normalizeDate(raw: any): Date {
 }
 
 export function SessionCard({ session, userRole, onChat, onAction }: SessionCardProps) {
+  const [showSummaryDialog, setShowSummaryDialog] = useState(false);
+
   // Prefer scheduledDate; fallback to scheduledAt
   const scheduled = normalizeDate(session.scheduledDate ?? session.scheduledAt);
 
@@ -245,7 +249,7 @@ export function SessionCard({ session, userRole, onChat, onAction }: SessionCard
             </Avatar>
           </div>
 
-          {/* Actions: ONLY Chat + Cancel Flow */}
+          {/* Actions: Chat + Cancel Flow + AI Summary */}
           <div className="flex items-center space-x-2 ml-4">
             {/* Chat always available */}
             <Button
@@ -256,6 +260,34 @@ export function SessionCard({ session, userRole, onChat, onAction }: SessionCard
             >
               <i className="fas fa-comment" />
             </Button>
+
+            {/* AI Summary button for tutors on completed sessions */}
+            {userRole === "tutor" && status === "completed" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowSummaryDialog(true)}
+                data-testid="button-lesson-summary"
+                className={session.aiSummary ? "border-blue-500 text-blue-600" : ""}
+              >
+                <i className={`fas ${session.aiSummary ? "fa-sparkles" : "fa-file-alt"} mr-1`} />
+                {session.aiSummary ? "View Summary" : "Add Summary"}
+              </Button>
+            )}
+
+            {/* View summary for students */}
+            {userRole === "student" && status === "completed" && session.aiSummary && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowSummaryDialog(true)}
+                data-testid="button-view-summary"
+                className="border-blue-500 text-blue-600"
+              >
+                <i className="fas fa-file-alt mr-1" />
+                View Summary
+              </Button>
+            )}
 
             {/* Initial cancel request */}
             {showRequestCancelButton && (
@@ -306,6 +338,13 @@ export function SessionCard({ session, userRole, onChat, onAction }: SessionCard
           </div>
         )}
       </CardContent>
+
+      {/* Lesson Summary Dialog */}
+      <LessonSummaryDialog
+        session={session}
+        open={showSummaryDialog}
+        onOpenChange={setShowSummaryDialog}
+      />
     </Card>
   );
 }

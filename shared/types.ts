@@ -92,6 +92,16 @@ export interface SessionDoc {
   notes?: string;             // optional free text
   priceCents: number;         // store monetary values as integer cents
 
+  // AI-Generated Lesson Summary fields
+  tutorNotes?: string;        // Raw notes from tutor after session
+  aiSummary?: {
+    whatWasLearned: string;   // Topics and concepts covered
+    mistakes: string;          // Common mistakes the student made
+    strengths: string;         // Student's strengths and achievements
+    practiceTasks: string;     // Actionable tasks for practice
+    generatedAt?: Date;        // When the summary was generated
+  };
+
   createdAt?: Date;
   updatedAt?: Date;
 }

@@ -22,6 +22,7 @@ import MySessions from "@/pages/MySessions";
 import ProfileSettings from "@/pages/ProfileSettings";
 import PendingApproval from "@/pages/PendingApproval";
 import NotificationsPage from "@/pages/NotificationsPage";
+import StudentReports from "@/pages/StudentReports";
 import Navbar from "@/components/Navbar";
 import TutorEarningsReport from "@/pages/TutorEarningsReport";
 
@@ -195,6 +196,7 @@ export default function App() {
             <Route path="/tutor-earnings" component={TutorEarningsReport} />
             <Route path="/profile-settings" component={ProfileSettings} />
             <Route path="/my-sessions" component={MySessions} />
+            <Route path="/student-reports" component={StudentReports} />
             <Route path="/notifications" component={NotificationsPage} />
 
             {/* Admin */}
