@@ -1,8 +1,8 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Initialize Google Gemini (Free tier available!)
+// Get your free API key from: https://makersuite.google.com/app/apikey
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export interface LessonSummaryInput {
   tutorNotes: string;
@@ -47,24 +47,12 @@ Please generate a structured summary with exactly these four sections:
 
 Format your response as a JSON object with these exact keys: "whatWasLearned", "mistakes", "strengths", "practiceTasks". Each value should be a clear, well-formatted string (you can use markdown formatting like bullet points).`;
 
-  const message = await anthropic.messages.create({
-    model: "claude-3-5-sonnet-20241022",
-    max_tokens: 2000,
-    messages: [
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
-  });
+  // Use Gemini 1.5 Flash (free tier)
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-  // Extract the text content from the response
-  const textContent = message.content.find((block) => block.type === "text");
-  if (!textContent || textContent.type !== "text") {
-    throw new Error("No text response from AI");
-  }
-
-  const responseText = textContent.text;
+  const result = await model.generateContent(prompt);
+  const response = result.response;
+  const responseText = response.text();
 
   // Try to extract JSON from the response
   let jsonMatch = responseText.match(/\{[\s\S]*\}/);
