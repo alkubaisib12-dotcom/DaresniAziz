@@ -45,6 +45,7 @@ export default function CompleteTutorProfile() {
     subjects: [] as string[],
     subjectPricing: {} as Record<string, string>, // subject-specific pricing
     certificationFiles: [] as Array<{ url: string; name: string }>,
+    useSamePriceForAll: true, // toggle for pricing mode
   });
 
   const [uploadingCert, setUploadingCert] = useState(false);
@@ -106,12 +107,19 @@ export default function CompleteTutorProfile() {
         body: JSON.stringify({ role: "tutor" }),
       });
 
-      // Convert subject pricing from strings to numbers
+      // Build subject pricing based on mode
       const subjectPricing: Record<string, number> = {};
-      for (const subjectId of formData.subjects) {
-        const price = Number(formData.subjectPricing[subjectId]) || 0;
-        if (price > 0) {
-          subjectPricing[subjectId] = price;
+      if (formData.useSamePriceForAll) {
+        const rate = Number(formData.hourlyRate) || 0;
+        formData.subjects.forEach((subjectId) => {
+          subjectPricing[subjectId] = rate;
+        });
+      } else {
+        for (const subjectId of formData.subjects) {
+          const price = Number(formData.subjectPricing[subjectId]) || 0;
+          if (price > 0) {
+            subjectPricing[subjectId] = price;
+          }
         }
       }
 
@@ -190,17 +198,30 @@ export default function CompleteTutorProfile() {
       return;
     }
 
-    // Validate that all selected subjects have pricing
-    const missingPricing = formData.subjects.filter(
-      (subjectId) => !formData.subjectPricing[subjectId] || Number(formData.subjectPricing[subjectId]) <= 0
-    );
-    if (missingPricing.length > 0) {
-      toast({
-        title: "Missing pricing",
-        description: "Please set an hourly rate for all selected subjects.",
-        variant: "destructive",
-      });
-      return;
+    // Validate pricing based on mode
+    if (formData.useSamePriceForAll) {
+      const hourlyRate = Number(formData.hourlyRate);
+      if (!formData.hourlyRate || isNaN(hourlyRate) || hourlyRate < 5 || hourlyRate > 200) {
+        toast({
+          title: "Invalid hourly rate",
+          description: "Please enter a rate between 5 and 200 BD per hour.",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else {
+      // Validate that all selected subjects have pricing
+      const missingPricing = formData.subjects.filter(
+        (subjectId) => !formData.subjectPricing[subjectId] || Number(formData.subjectPricing[subjectId]) <= 0
+      );
+      if (missingPricing.length > 0) {
+        toast({
+          title: "Missing pricing",
+          description: "Please set an hourly rate for all selected subjects.",
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
     updateProfileMutation.mutate();
@@ -221,6 +242,13 @@ export default function CompleteTutorProfile() {
         ...prev.subjectPricing,
         [subjectId]: price,
       },
+    }));
+  };
+
+  const togglePricingMode = () => {
+    setFormData((prev) => ({
+      ...prev,
+      useSamePriceForAll: !prev.useSamePriceForAll,
     }));
   };
 
@@ -370,31 +398,12 @@ export default function CompleteTutorProfile() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-<Label htmlFor="hourlyRate">Hourly Rate (BHD) *</Label>
-                  <div className="relative">
-                    <DollarSign className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="hourlyRate"
-                      type="number"
-                      placeholder="10"
-                      value={formData.hourlyRate}
-                      onChange={(e) => setFormData((p) => ({ ...p, hourlyRate: e.target.value }))}
-                      className="pl-10"
-                      data-testid="input-hourlyRate"
-                      min={5}
-                      max={200}
-                      step="1"
-                      required
-                    />
-                  </div>
-                </div>
               </div>
 
-              {/* Subjects with Pricing */}
+              {/* Subjects Selection */}
               <div className="space-y-4">
-                <h3 className="text-xl font-semibold">Subjects & Pricing *</h3>
-                <p className="text-sm text-muted-foreground">Select subjects you can teach and set your hourly rate for each</p>
+                <h3 className="text-xl font-semibold">Subjects You Can Teach *</h3>
+                <p className="text-sm text-muted-foreground">Select all subjects you're qualified to teach</p>
                 <div className="space-y-3">
                   {subjects.map((subject) => (
                     <div key={subject.id} className="flex items-center gap-3 p-3 border rounded-lg">
@@ -407,27 +416,95 @@ export default function CompleteTutorProfile() {
                       <Label htmlFor={subject.id} className="flex-1 cursor-pointer font-medium">
                         {subject.name}
                       </Label>
-                      {formData.subjects.includes(subject.id) && (
-                        <div className="flex items-center gap-2">
-                          <DollarSign className="h-4 w-4 text-muted-foreground" />
-                          <Input
-                            type="number"
-                            placeholder="Price/hr"
-                            value={formData.subjectPricing[subject.id] || ""}
-                            onChange={(e) => handleSubjectPriceChange(subject.id, e.target.value)}
-                            className="w-24"
-                            min={5}
-                            max={200}
-                            step="1"
-                            required
-                          />
-                          <span className="text-sm text-muted-foreground">BHD/hr</span>
-                        </div>
-                      )}
                     </div>
                   ))}
                 </div>
               </div>
+
+              {/* Pricing Section */}
+              {formData.subjects.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-semibold">Pricing *</h3>
+                    {formData.subjects.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={togglePricingMode}
+                        className="text-xs"
+                      >
+                        {formData.useSamePriceForAll
+                          ? "Set Different Prices"
+                          : "Use Same Price for All"}
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {formData.useSamePriceForAll
+                      ? "Set one hourly rate for all subjects"
+                      : "Set different hourly rates for each subject"}
+                  </p>
+
+                  {/* Same price for all subjects */}
+                  {formData.useSamePriceForAll && (
+                    <div className="space-y-2">
+                      <Label htmlFor="hourlyRate">Hourly Rate (BD) *</Label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-3 text-sm font-semibold text-muted-foreground">
+                          BD
+                        </span>
+                        <Input
+                          id="hourlyRate"
+                          type="number"
+                          placeholder="10"
+                          value={formData.hourlyRate}
+                          onChange={(e) => setFormData((p) => ({ ...p, hourlyRate: e.target.value }))}
+                          className="pl-12"
+                          data-testid="input-hourlyRate"
+                          min={5}
+                          max={200}
+                          step="1"
+                          required={formData.useSamePriceForAll}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Recommended: 10–50 BD per hour
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Different prices per subject */}
+                  {!formData.useSamePriceForAll && (
+                    <div className="space-y-3">
+                      {formData.subjects.map((subjectId) => {
+                        const subject = subjects.find((s) => s.id === subjectId);
+                        if (!subject) return null;
+                        return (
+                          <div key={subjectId} className="flex items-center gap-3 p-3 border rounded-lg bg-gray-50">
+                            <Label className="flex-1 font-medium">{subject.name}</Label>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-muted-foreground">BD</span>
+                              <Input
+                                type="number"
+                                placeholder="10"
+                                value={formData.subjectPricing[subjectId] || ""}
+                                onChange={(e) => handleSubjectPriceChange(subjectId, e.target.value)}
+                                className="w-24"
+                                min={5}
+                                max={200}
+                                step="1"
+                                required
+                              />
+                              <span className="text-sm text-muted-foreground whitespace-nowrap">BD/hr</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Bio */}
               <div className="space-y-4">

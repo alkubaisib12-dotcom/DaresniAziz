@@ -45,6 +45,8 @@ export default function CompleteSignup() {
       education: "",
       certifications: "",
       subjects: [] as string[],
+      subjectPricing: {} as Record<string, string>,
+      useSamePriceForAll: true,
     },
   });
 
@@ -161,7 +163,7 @@ export default function CompleteSignup() {
 
     const t = formData.tutorData;
 
-    if (!t.phone || !t.bio || !t.hourlyRate || !t.experience || !t.education) {
+    if (!t.phone || !t.bio || !t.experience || !t.education) {
       toast({
         title: "Missing information",
         description: "Please fill in all required fields.",
@@ -188,22 +190,57 @@ export default function CompleteSignup() {
       return;
     }
 
-    const hourlyRate = parseFloat(t.hourlyRate);
-    if (isNaN(hourlyRate) || hourlyRate < 5 || hourlyRate > 500) {
-      toast({
-        title: "Invalid hourly rate",
-        description: "Please enter a rate between $5 and $500 per hour.",
-        variant: "destructive",
+    // Validate pricing based on mode
+    if (t.useSamePriceForAll) {
+      const hourlyRate = parseFloat(t.hourlyRate);
+      if (!t.hourlyRate || isNaN(hourlyRate) || hourlyRate < 5 || hourlyRate > 500) {
+        toast({
+          title: "Invalid hourly rate",
+          description: "Please enter a rate between 5 and 500 BD per hour.",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else {
+      // Check that all selected subjects have pricing
+      const missingPricing = t.subjects.filter(
+        (subjectId) => !t.subjectPricing[subjectId] || parseFloat(t.subjectPricing[subjectId]) <= 0
+      );
+      if (missingPricing.length > 0) {
+        toast({
+          title: "Missing pricing",
+          description: "Please set an hourly rate for all selected subjects.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    // Build subject pricing for API
+    const subjectPricing: Record<string, number> = {};
+    if (t.useSamePriceForAll) {
+      const rate = parseFloat(t.hourlyRate);
+      t.subjects.forEach((subjectId) => {
+        subjectPricing[subjectId] = rate;
       });
-      return;
+    } else {
+      t.subjects.forEach((subjectId) => {
+        const price = parseFloat(t.subjectPricing[subjectId]);
+        if (price > 0) {
+          subjectPricing[subjectId] = price;
+        }
+      });
     }
 
     const profileData = {
-      ...t,
-      hourlyRate,
-      // Don't send certifications field if it's just text - the schema expects file objects
-      // Certifications can be added later through the profile edit page
-      certifications: undefined,
+      phone: t.phone,
+      bio: t.bio,
+      hourlyRate: t.useSamePriceForAll ? parseFloat(t.hourlyRate) : 0,
+      subjectPricing,
+      experience: t.experience,
+      education: t.education,
+      subjects: t.subjects,
+      certifications: undefined, // Don't send certifications field - can be added later
     };
 
     completeSignupMutation.mutate({
@@ -221,6 +258,29 @@ export default function CompleteSignup() {
         tutorData: { ...prev.tutorData, subjects: [...set] },
       };
     });
+  };
+
+  const handleSubjectPriceChange = (subjectId: string, price: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      tutorData: {
+        ...prev.tutorData,
+        subjectPricing: {
+          ...prev.tutorData.subjectPricing,
+          [subjectId]: price,
+        },
+      },
+    }));
+  };
+
+  const togglePricingMode = () => {
+    setFormData((prev) => ({
+      ...prev,
+      tutorData: {
+        ...prev.tutorData,
+        useSamePriceForAll: !prev.tutorData.useSamePriceForAll,
+      },
+    }));
   };
 
   const updateTutorField = (field: string, value: string) => {
@@ -415,26 +475,58 @@ export default function CompleteSignup() {
                       </p>
                     </div>
 
-                    <div className="space-y-2">
-<Label htmlFor="hourlyRate">Hourly Rate (BHD) *</Label>
-                      <div className="relative">
-                        <DollarSign className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                        <Input
-                          id="hourlyRate"
-                          type="number"
-                          placeholder="10"
-                          value={formData.tutorData.hourlyRate}
-                          onChange={(e) => updateTutorField("hourlyRate", e.target.value)}
-                          className="pl-10"
-                          min="10"
-                          max="200"
-                          required
-                        />
+                    {/* Pricing section - only show toggle if multiple subjects selected */}
+                    {formData.tutorData.subjects.length > 1 && (
+                      <div className="space-y-3 p-4 bg-gray-50 rounded-lg border">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-base font-semibold">Pricing Options</Label>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={togglePricingMode}
+                            className="text-xs"
+                          >
+                            {formData.tutorData.useSamePriceForAll
+                              ? "Set Different Prices"
+                              : "Use Same Price for All"}
+                          </Button>
+                        </div>
+                        <p className="text-xs text-gray-600">
+                          {formData.tutorData.useSamePriceForAll
+                            ? "All subjects will have the same hourly rate"
+                            : "Set a different hourly rate for each subject"}
+                        </p>
                       </div>
-                      <p className="text-xs text-gray-500">
-                        Recommended: 10–50 per hour depending on subject and experience
-                      </p>
-                    </div>
+                    )}
+
+                    {/* Same price for all subjects */}
+                    {(formData.tutorData.subjects.length === 0 ||
+                      formData.tutorData.subjects.length === 1 ||
+                      formData.tutorData.useSamePriceForAll) && (
+                      <div className="space-y-2">
+                        <Label htmlFor="hourlyRate">Hourly Rate (BD) *</Label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-3 text-sm font-semibold text-gray-500">
+                            BD
+                          </span>
+                          <Input
+                            id="hourlyRate"
+                            type="number"
+                            placeholder="10"
+                            value={formData.tutorData.hourlyRate}
+                            onChange={(e) => updateTutorField("hourlyRate", e.target.value)}
+                            className="pl-12"
+                            min="5"
+                            max="500"
+                            required={formData.tutorData.useSamePriceForAll}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          Recommended: 10–50 BD per hour depending on subject and experience
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   {/* Background */}
@@ -497,30 +589,57 @@ export default function CompleteSignup() {
                         return (
                           <div
                             key={subject.id}
-                            className={`flex items-center space-x-3 p-4 border-2 rounded-lg transition-all ${
+                            className={`p-4 border-2 rounded-lg transition-all ${
                               checked
                                 ? "border-[#9B1B30] bg-red-50"
                                 : "border-gray-200 hover:border-[#9B1B30]/50"
                             }`}
                           >
-                            <Checkbox
-                              id={sid}
-                              checked={checked}
-                              onCheckedChange={(isChecked) =>
-                                handleSubjectChange(subject.id, !!isChecked)
-                              }
-                            />
-                            <Label htmlFor={sid} className="flex-1 cursor-pointer">
-                              <div className="font-medium">{subject.name}</div>
-                              <div className="text-sm text-gray-500">
-                                {(subject as any).description || ""}
+                            <div className="flex items-center space-x-3">
+                              <Checkbox
+                                id={sid}
+                                checked={checked}
+                                onCheckedChange={(isChecked) =>
+                                  handleSubjectChange(subject.id, !!isChecked)
+                                }
+                              />
+                              <Label htmlFor={sid} className="flex-1 cursor-pointer">
+                                <div className="font-medium">{subject.name}</div>
+                                <div className="text-sm text-gray-500">
+                                  {(subject as any).description || ""}
+                                </div>
+                                {(subject as any).category && (
+                                  <Badge variant="secondary" className="mt-1 text-xs">
+                                    {(subject as any).category}
+                                  </Badge>
+                                )}
+                              </Label>
+                            </div>
+
+                            {/* Show individual pricing input when different pricing mode is active */}
+                            {checked && !formData.tutorData.useSamePriceForAll && (
+                              <div className="mt-3 flex items-center gap-2 pl-8">
+                                <Label htmlFor={`price-${subject.id}`} className="text-xs whitespace-nowrap">
+                                  Price:
+                                </Label>
+                                <div className="relative flex-1">
+                                  <span className="absolute left-2 top-2 text-xs font-semibold text-gray-500">
+                                    BD
+                                  </span>
+                                  <Input
+                                    id={`price-${subject.id}`}
+                                    type="number"
+                                    placeholder="10"
+                                    value={formData.tutorData.subjectPricing[subject.id] || ""}
+                                    onChange={(e) => handleSubjectPriceChange(subject.id, e.target.value)}
+                                    className="pl-10 h-8 text-sm"
+                                    min="5"
+                                    max="500"
+                                  />
+                                </div>
+                                <span className="text-xs text-gray-500 whitespace-nowrap">BD/hr</span>
                               </div>
-                              {(subject as any).category && (
-                                <Badge variant="secondary" className="mt-1 text-xs">
-                                  {(subject as any).category}
-                                </Badge>
-                              )}
-                            </Label>
+                            )}
                           </div>
                         );
                       })}
