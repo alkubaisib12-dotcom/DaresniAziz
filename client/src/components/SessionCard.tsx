@@ -55,6 +55,7 @@ function normalizeDate(raw: any): Date {
 
 export function SessionCard({ session, userRole, onChat, onAction }: SessionCardProps) {
   const [showSummaryDialog, setShowSummaryDialog] = useState(false);
+  const [showFullDetails, setShowFullDetails] = useState(false);
 
   // Prefer scheduledDate; fallback to scheduledAt
   const scheduled = normalizeDate(session.scheduledDate ?? session.scheduledAt);
@@ -147,16 +148,25 @@ export function SessionCard({ session, userRole, onChat, onAction }: SessionCard
 
             {/* Session Info */}
             <div className="flex-1 min-w-0">
-              <div className="flex items-center space-x-2 mb-1">
+              <div className="flex items-center space-x-2 mb-1 flex-wrap">
                 <h3 className="font-semibold truncate" data-testid="text-session-title">
-                  {subjectName} with {displayName}
+                  {userRole === "tutor" ? (
+                    <>
+                      <Badge variant="secondary" className="mr-2 bg-purple-100 text-purple-800">
+                        {subjectName}
+                      </Badge>
+                      with {displayName}
+                    </>
+                  ) : (
+                    `${subjectName} with ${displayName}`
+                  )}
                 </h3>
                 <Badge className={getStatusColor(status)}>
                   {status.replace("_", " ")}
                 </Badge>
               </div>
 
-              <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+              <div className="flex items-center space-x-4 text-sm text-muted-foreground flex-wrap">
                 <div className="flex items-center space-x-1">
                   <i className="fas fa-calendar text-xs" />
                   <span data-testid="text-session-date">
@@ -174,20 +184,21 @@ export function SessionCard({ session, userRole, onChat, onAction }: SessionCard
                   <span>{session.duration || 60} min</span>
                 </div>
                 {priceValue !== undefined && !Number.isNaN(priceValue) && (
-  <div className="flex items-center space-x-1">
-    <i className="fas fa-coins text-xs" />
-    <span>{formatMoney(priceValue)}</span>
-  </div>
-)}
+                  <div className={`flex items-center space-x-1 ${userRole === "tutor" ? "font-semibold text-green-700" : ""}`}>
+                    <i className="fas fa-coins text-xs" />
+                    <span>{formatMoney(priceValue)}</span>
+                  </div>
+                )}
 
               </div>
 
-              {/* Calendar-style time blocks display */}
-              {session.timeSlots && session.timeSlots.length > 1 && (
+              {/* Calendar-style time blocks display - Show for tutors always, for students only if multiple */}
+              {session.timeSlots && session.timeSlots.length > 0 &&
+               (userRole === "tutor" || session.timeSlots.length > 1) && (
                 <div className="mt-2">
-                  <div className="text-xs text-muted-foreground mb-1">
+                  <div className="text-xs font-semibold text-muted-foreground mb-1">
                     <i className="fas fa-calendar-check text-xs mr-1" />
-                    Booked time slots:
+                    {session.timeSlots.length > 1 ? "Multiple Time Slots Booked:" : "Time Slot:"}
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {session.timeSlots.map((slot: string, index: number) => {
@@ -200,7 +211,7 @@ export function SessionCard({ session, userRole, onChat, onAction }: SessionCard
                         <Badge
                           key={index}
                           variant="outline"
-                          className="bg-primary/5 text-primary border-primary/20 text-xs"
+                          className="bg-primary/5 text-primary border-primary/20 text-xs font-medium"
                         >
                           {slot} - {endTime}
                         </Badge>
@@ -210,11 +221,86 @@ export function SessionCard({ session, userRole, onChat, onAction }: SessionCard
                 </div>
               )}
 
+              {/* Session Notes - Show fully for tutors, truncate for students */}
               {session.notes && (
-                <p className="text-sm text-muted-foreground mt-1 truncate">
-                  <i className="fas fa-sticky-note text-xs mr-1" />
-                  {session.notes}
-                </p>
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded">
+                  <div className="text-xs font-semibold text-blue-900 mb-1">
+                    <i className="fas fa-sticky-note text-xs mr-1" />
+                    {userRole === "tutor" ? "Student's Focus Areas:" : "Your Notes:"}
+                  </div>
+                  <p className={`text-sm text-blue-800 ${userRole === "student" ? "truncate" : ""}`}>
+                    {session.notes}
+                  </p>
+                </div>
+              )}
+
+              {/* Comprehensive Booking Details for Tutors (especially for pending sessions) */}
+              {userRole === "tutor" && (status === "pending" || status === "scheduled") && (
+                <div className="mt-3">
+                  <button
+                    onClick={() => setShowFullDetails(!showFullDetails)}
+                    className="text-xs text-primary hover:underline flex items-center gap-1"
+                  >
+                    <i className={`fas fa-chevron-${showFullDetails ? "up" : "down"} text-xs`} />
+                    {showFullDetails ? "Hide" : "Show"} Full Booking Details
+                  </button>
+
+                  {showFullDetails && (
+                    <div className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded space-y-2">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <span className="font-semibold text-gray-700">Subject:</span>
+                          <p className="text-gray-900">{subjectName}</p>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-gray-700">Student:</span>
+                          <p className="text-gray-900">{displayName}</p>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-gray-700">Date:</span>
+                          <p className="text-gray-900">{format(scheduled, "EEEE, MMM dd, yyyy")}</p>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-gray-700">Duration:</span>
+                          <p className="text-gray-900">{session.duration || 60} minutes</p>
+                        </div>
+                        {priceValue !== undefined && !Number.isNaN(priceValue) && (
+                          <div>
+                            <span className="font-semibold text-gray-700">Session Fee:</span>
+                            <p className="text-gray-900 font-semibold">{formatMoney(priceValue)}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {session.timeSlots && session.timeSlots.length > 0 && (
+                        <div>
+                          <span className="font-semibold text-gray-700 text-xs">Time Slots:</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {session.timeSlots.map((slot: string, index: number) => {
+                              const [hours, minutes] = slot.split(":").map(Number);
+                              const endHours = hours + 1;
+                              const endTime = `${String(endHours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+                              return (
+                                <Badge key={index} variant="outline" className="text-xs">
+                                  {slot} - {endTime}
+                                </Badge>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {session.notes && (
+                        <div>
+                          <span className="font-semibold text-gray-700 text-xs">Student's Goals:</span>
+                          <p className="text-xs text-gray-900 mt-1 p-2 bg-white rounded border">
+                            {session.notes}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Cancel request info / status */}
