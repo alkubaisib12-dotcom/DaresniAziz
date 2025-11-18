@@ -9,6 +9,7 @@ import type * as FirebaseFirestore from "@google-cloud/firestore";
 import { requireUser, requireAdmin, type AuthUser, fdb } from "./firebase-admin";
 import { z } from "zod";
 import { sendToAdmins, createTutorRegistrationEmail } from "./email";
+import { TutorRankingService } from "./services/tutorRanking";
 
 const chooseRoleSchema = z.object({
   role: z.enum(["student", "tutor", "admin"]),
@@ -1323,6 +1324,169 @@ app.get("/api/tutors", async (_req, res) => {
     res
       .status(500)
       .json({ message: "Failed to fetch tutors", fieldErrors: {} });
+  }
+});
+
+// === AI-POWERED TUTOR RECOMMENDATIONS ===
+// GET /api/tutors/recommended
+app.get("/api/tutors/recommended", async (req, res) => {
+  try {
+    // Extract query parameters
+    const subjectId = req.query.subjectId as string | undefined;
+    const gradeLevel = req.query.gradeLevel as string | undefined;
+    const maxBudget = req.query.maxBudget ? parseInt(req.query.maxBudget as string) : undefined;
+    const preferredDays = req.query.preferredDays
+      ? (req.query.preferredDays as string).split(",")
+      : undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+
+    // Get all active and verified tutors
+    const profs = await listCollection<any>("tutor_profiles", [
+      ["isActive", "==", true],
+      ["isVerified", "==", true],
+    ]);
+
+    if (profs.length === 0) {
+      return res.json([]);
+    }
+
+    // Filter by subject if specified
+    let tutorIds = profs.map((p) => p.id);
+
+    if (subjectId) {
+      const tutorSubjectSnap = await fdb!
+        .collection("tutor_subjects")
+        .where("subjectId", "==", subjectId)
+        .get();
+
+      const tutorsForSubject = new Set(
+        tutorSubjectSnap.docs.map((d) => d.get("tutorId") as string)
+      );
+
+      tutorIds = tutorIds.filter((id) => tutorsForSubject.has(id));
+    }
+
+    if (tutorIds.length === 0) {
+      return res.json([]);
+    }
+
+    // Initialize ranking service and rank tutors
+    const rankingService = new TutorRankingService(fdb!);
+    const rankings = await rankingService.rankTutors(tutorIds, {
+      subjectId,
+      gradeLevel,
+      maxBudget,
+      preferredDays,
+    });
+
+    // Take top N tutors
+    const topRankings = rankings.slice(0, limit);
+
+    // Fetch full tutor data for top ranked tutors
+    const topTutorIds = topRankings.map((r) => r.tutorId);
+    const topProfiles = profs.filter((p) => topTutorIds.includes(p.id));
+
+    // Load user data
+    const userIds = topProfiles.map((p) => p.userId).filter(Boolean);
+    const mapUsers = await batchLoadMap<any>("users", userIds);
+
+    // Load subjects for each tutor
+    const tsDocs = await (async () => {
+      const chunks: string[][] = [];
+      for (let i = 0; i < topTutorIds.length; i += 10) {
+        chunks.push(topTutorIds.slice(i, i + 10));
+      }
+      const acc: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+      for (const chunk of chunks) {
+        const snap = await fdb!
+          .collection("tutor_subjects")
+          .where("tutorId", "in", chunk)
+          .get();
+        acc.push(...snap.docs);
+      }
+      return acc;
+    })();
+
+    const byTutor = new Map<string, string[]>();
+    for (const d of tsDocs) {
+      const tId = d.get("tutorId") as string;
+      const sId = d.get("subjectId") as string;
+      if (!byTutor.has(tId)) byTutor.set(tId, []);
+      byTutor.get(tId)!.push(sId);
+    }
+
+    const subjectIds = Array.from(
+      new Set(tsDocs.map((d) => d.get("subjectId") as string).filter(Boolean))
+    );
+    const mapSubjects = await batchLoadMap<any>("subjects", subjectIds);
+
+    // Load reviews for ratings
+    const ratingStats = new Map<string, { sum: number; count: number }>();
+    if (topTutorIds.length > 0) {
+      const reviewChunks: string[][] = [];
+      for (let i = 0; i < topTutorIds.length; i += 10) {
+        reviewChunks.push(topTutorIds.slice(i, i + 10));
+      }
+
+      for (const chunk of reviewChunks) {
+        const reviewSnap = await fdb!
+          .collection("reviews")
+          .where("tutorId", "in", chunk)
+          .get();
+
+        for (const rDoc of reviewSnap.docs) {
+          const r = rDoc.data() as any;
+          const tid = String(r.tutorId || "");
+          const rating = Number(r.rating ?? 0);
+          if (!tid || !rating) continue;
+
+          const prev = ratingStats.get(tid) || { sum: 0, count: 0 };
+          prev.sum += rating;
+          prev.count += 1;
+          ratingStats.set(tid, prev);
+        }
+      }
+    }
+
+    // Build response with AI ranking data
+    const tutorsWithRankings = topProfiles.map((p) => {
+      const ranking = topRankings.find((r) => r.tutorId === p.id);
+      const sids = byTutor.get(p.id) || [];
+      const subjects = sids
+        .map((sid) =>
+          mapSubjects.get(sid) ? { id: sid, ...mapSubjects.get(sid)! } : null
+        )
+        .filter(Boolean);
+
+      const stats = ratingStats.get(p.id);
+      const reviewCount = stats?.count ?? 0;
+      const averageRating =
+        stats && stats.count > 0 ? stats.sum / stats.count : 0;
+
+      return {
+        ...p,
+        user: mapUsers.get(p.userId) || null,
+        subjects,
+        averageRating,
+        reviewCount,
+        totalRating: averageRating,
+        totalReviews: reviewCount,
+        // AI ranking data
+        aiScore: ranking?.score,
+        aiBreakdown: ranking?.breakdown,
+        aiReasoning: ranking?.reasoning,
+      };
+    });
+
+    // Sort by AI score (should already be sorted, but ensure)
+    tutorsWithRankings.sort((a, b) => (b.aiScore || 0) - (a.aiScore || 0));
+
+    res.json(tutorsWithRankings);
+  } catch (error) {
+    console.error("Error fetching recommended tutors:", error);
+    res
+      .status(500)
+      .json({ message: "Failed to fetch tutor recommendations", fieldErrors: {} });
   }
 });
 

@@ -61,12 +61,23 @@ function useLocalFavorites(userId?: string) {
 /* ------------------------------------------------------------------ */
 type TutorVM = TutorProfileFS & {
   user: UserFS;
-  // NOTE: API may send strings OR full subject objects – we’ll handle that at runtime.
+  // NOTE: API may send strings OR full subject objects – we'll handle that at runtime.
   subjects: any[];
   totalRating?: number | string;
   totalReviews?: number;
   isActive?: boolean;
   isVerified?: boolean;
+  // AI ranking data
+  aiScore?: number;
+  aiBreakdown?: {
+    subjectExpertise: number;
+    ratingScore: number;
+    successMetrics: number;
+    availability: number;
+    valueScore: number;
+    experience: number;
+  };
+  aiReasoning?: string[];
 };
 
 export default function TutorBrowse() {
@@ -83,11 +94,29 @@ export default function TutorBrowse() {
   const { favorites, toggle, isFav } = useLocalFavorites(user?.id);
 
   /* --------------------------- Load tutors from API --------------------------- */
+  // Use AI recommendations when wizard filters are active
+  const shouldUseAI = !!wizardFilters?.subjectId;
+  const apiEndpoint = shouldUseAI ? "/api/tutors/recommended" : "/api/tutors";
+
+  const queryParams = shouldUseAI && wizardFilters
+    ? new URLSearchParams({
+        subjectId: wizardFilters.subjectId!,
+        ...(wizardFilters.maxRate && { maxBudget: wizardFilters.maxRate.toString() }),
+        limit: "20",
+      }).toString()
+    : "";
+
   const {
     data: tutors = [],
     isLoading: tutorsLoading,
   } = useQuery<TutorVM[]>({
-    queryKey: ["/api/tutors"],
+    queryKey: [apiEndpoint, queryParams],
+    queryFn: async () => {
+      const url = queryParams ? `${apiEndpoint}?${queryParams}` : apiEndpoint;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch tutors");
+      return res.json();
+    },
   });
 
   /* --------------------- Derive subjects from tutors -------------------------- */
@@ -168,6 +197,12 @@ export default function TutorBrowse() {
     });
 
     const sorted = [...base].sort((a, b) => {
+      // If AI scores are present, prioritize them
+      if (a.aiScore !== undefined && b.aiScore !== undefined) {
+        return b.aiScore - a.aiScore;
+      }
+
+      // Fallback to manual sorting
       switch (sortBy) {
         case "rating":
           return (
@@ -226,15 +261,15 @@ export default function TutorBrowse() {
     setWizardFilters(filters);
     setShowWizard(false);
     toast({
-      title: "Filters applied!",
-      description: "Showing tutors that match your preferences.",
+      title: "AI Matching Activated!",
+      description: "Showing personalized tutor recommendations based on your preferences.",
     });
   };
 
   const clearWizardFilters = () => {
     setWizardFilters(null);
     toast({
-      title: "Smart filters cleared",
+      title: "AI Matching Deactivated",
       description: "Showing all tutors.",
     });
   };
@@ -337,15 +372,22 @@ export default function TutorBrowse() {
 
         {/* Smart Filters Active Indicator */}
         {wizardFilters && (
-          <Card className="mb-6 border-primary bg-primary/5">
+          <Card className="mb-6 border-primary bg-gradient-to-r from-primary/10 to-pink-500/10">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <div className="bg-primary text-primary-foreground rounded-full p-2">
-                    <i className="fas fa-magic" />
+                  <div className="bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full p-2">
+                    <i className="fas fa-brain" />
                   </div>
                   <div>
-                    <div className="font-semibold">Smart Filters Active</div>
+                    <div className="font-semibold flex items-center">
+                      <span className="bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                        AI-Powered Recommendations Active
+                      </span>
+                      <Badge className="ml-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs">
+                        Smart Match
+                      </Badge>
+                    </div>
                     <div className="flex flex-wrap gap-2 mt-1">
                       {wizardFilters.subjectName && (
                         <Badge variant="secondary">
