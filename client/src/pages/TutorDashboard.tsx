@@ -548,7 +548,34 @@ export default function TutorDashboard() {
                       </div>
                     ) : (
                       pendingSessions.map((session: any) => (
-                        <PendingSessionCard key={session.id} session={session} />
+                        <div key={session.id}>
+                          <SessionCard
+                            session={session}
+                            userRole="tutor"
+                            onChat={() => handleStartChat(session.studentId)}
+                            onAction={(action) => handleSessionAction(session.id, action)}
+                          />
+                          {/* Accept/Decline buttons for pending sessions */}
+                          <div className="mt-2 flex gap-2 px-4">
+                            <Button
+                              onClick={() => handleAccept(session.id)}
+                              disabled={updateSessionMutation.isPending}
+                              className="flex-1"
+                            >
+                              <CheckCircle className="h-4 w-4 mr-2" />
+                              Accept
+                            </Button>
+                            <Button
+                              onClick={() => handleReject(session.id)}
+                              disabled={updateSessionMutation.isPending}
+                              variant="outline"
+                              className="flex-1"
+                            >
+                              <XCircle className="h-4 w-4 mr-2" />
+                              Decline
+                            </Button>
+                          </div>
+                        </div>
                       ))
                     )}
                   </TabsContent>
