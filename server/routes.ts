@@ -1963,12 +1963,47 @@ app.get("/api/tutors/:id", async (req, res) => {
 
       const updated = await ref.get();
       res.json({ id: updated.id, ...updated.data() });
-    } catch (error: any) {
-      console.error("Error generating AI summary:", error);
-      const errorMessage = error?.message || "Failed to generate summary. Please try again.";
-      res.status(500).json({ message: errorMessage, fieldErrors: {} });
-    }
+   } catch (error: any) {
+  console.error("Error generating AI summary:", error);
+
+  const msg = String(error?.message ?? "");
+  const isOverloaded =
+    msg.includes("model is overloaded") ||
+    msg.includes("503 Service Unavailable");
+
+  if (isOverloaded) {
+    return res
+      .status(503)
+      .json({
+        message: "AI service is temporarily busy. Please try again in a few seconds.",
+        fieldErrors: {},
+      });
+  }
+
+  if (msg.toLowerCase().includes("api key")) {
+    return res
+      .status(500)
+      .json({
+        message: "AI configuration error. Please contact the administrator.",
+        fieldErrors: {},
+      });
+  }
+
+  if (msg.toLowerCase().includes("quota")) {
+    return res
+      .status(429)
+      .json({
+        message: "AI quota exceeded. Please try again later.",
+        fieldErrors: {},
+      });
+  }
+
+  res.status(500).json({
+    message: msg || "Failed to generate summary. Please try again.",
+    fieldErrors: {},
   });
+}
+});
 
   // === REVIEWS ===
   app.get("/api/reviews/:tutorId", async (req, res) => {
