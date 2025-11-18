@@ -79,6 +79,7 @@ export interface SessionDoc {
   subjectId: string;          // Subject.id
   scheduledAt: Date;          // client uses Date; convert to Timestamp when saving
   duration: number;           // minutes
+  timeSlots?: string[];       // array of booked time slots in HH:MM format, e.g., ["10:00", "11:00", "16:00"]
   status: SessionStatus;      // default 'scheduled'
   meetingLink?: string | null;
   notes?: string;             // optional free text

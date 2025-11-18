@@ -251,6 +251,7 @@ export function BookingModal({ tutor, onClose, onConfirm }: BookingModalProps) {
       subjectId,
       scheduledAt: scheduledAt.toISOString(),
       duration,
+      timeSlots: [...selectedSlots].sort(), // Store individual time slots
       notes,
       meetingLink: undefined,
       priceCents: Math.round(sessionCost * 100),
