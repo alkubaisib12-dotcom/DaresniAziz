@@ -3,6 +3,12 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 // Initialize Google Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+// Available models list for reference (2025):
+// - "gemini-2.5-flash" (recommended for speed and cost efficiency)
+// - "gemini-2.5-pro" (recommended for complex reasoning tasks)
+// - "gemini-2.0-flash" (alternative, balanced performance)
+// Note: Gemini 1.0 and 1.5 models are deprecated
+
 export interface LessonSummaryInput {
   tutorNotes: string;
   subject?: string;
@@ -90,9 +96,37 @@ Format your response as a JSON object with these exact keys: "whatWasLearned", "
     model: "gemini-2.5-flash",
   });
 
+  // Try multiple model names in order of preference
+  // Use current 2025 models (1.0 and 1.5 models are deprecated)
+  const modelNames = [
+    "gemini-2.5-flash",    // Primary: fast and cost-efficient
+    "gemini-2.0-flash",    // Fallback 1: alternative flash model
+    "gemini-2.5-pro"       // Fallback 2: more capable but slower
+  ];
+
+  let model;
+  let lastError;
+
+  for (const modelName of modelNames) {
+    try {
+      model = genAI.getGenerativeModel({ model: modelName });
+      // Test the model with a simple call to verify it's available
+      break;
+    } catch (e: any) {
+      lastError = e;
+      console.log(`Model ${modelName} not available, trying next...`);
+      continue;
+    }
+  }
+
+  if (!model) {
+    throw new Error(`Unable to initialize any Gemini AI model. Last error: ${lastError?.message || 'Unknown'}. Please check your API key or try again later.`);
+  }
+
   try {
-    // 🔄 Auto-retry for 503 overload
-    const responseText = await generateWithRetry(model, prompt);
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const responseText = response.text();
 
     // Extract JSON
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
