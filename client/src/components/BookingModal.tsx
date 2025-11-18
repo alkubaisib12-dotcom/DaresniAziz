@@ -10,6 +10,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatMoney } from "@/lib/currency";
 
 import { useToast } from "@/hooks/use-toast";
@@ -73,8 +74,16 @@ export function BookingModal({ tutor, onClose, onConfirm }: BookingModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Normalize subjects array
+  const tutorSubjects = (tutor?.subjects ?? []).map((s: any, idx: number) =>
+    typeof s === "string"
+      ? { id: s, name: s }
+      : { id: s?.id ?? String(idx), name: s?.name ?? String(s) }
+  );
+
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
+  const [selectedSubject, setSelectedSubject] = useState<string>(tutorSubjects[0]?.id ?? "");
   const [notes, setNotes] = useState<string>("");
 
   const [slots, setSlots] = useState<Slot[]>([]);
@@ -84,7 +93,14 @@ export function BookingModal({ tutor, onClose, onConfirm }: BookingModalProps) {
   // Track specific calendar dates that turned out to have no available slots
   const [unavailableDates, setUnavailableDates] = useState<Set<string>>(new Set());
 
-  const hourlyRate = Number(tutor?.hourlyRate ?? 15);
+  // Calculate hourly rate based on selected subject
+  const hourlyRate = useMemo(() => {
+    const subjectPricing = tutor?.subjectPricing;
+    if (subjectPricing && selectedSubject && subjectPricing[selectedSubject]) {
+      return Number(subjectPricing[selectedSubject]);
+    }
+    return Number(tutor?.hourlyRate ?? 15);
+  }, [tutor, selectedSubject]);
 
   // Calculate duration from selected slots
   const duration = useMemo(() => {
@@ -227,6 +243,15 @@ export function BookingModal({ tutor, onClose, onConfirm }: BookingModalProps) {
       return;
     }
 
+    if (!selectedSubject) {
+      toast({
+        title: "Missing info",
+        description: "Please select a subject.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!selectedDate || selectedSlots.length === 0) {
       toast({
         title: "Missing info",
@@ -243,12 +268,11 @@ export function BookingModal({ tutor, onClose, onConfirm }: BookingModalProps) {
     scheduledAt.setHours(hh, mm, 0, 0);
 
     const tutorProfileId: string = String(tutor?.id || "");
-    const subjectId = tutor?.subjects?.[0]?.id ?? tutor?.subjects?.[0] ?? "general";
 
     const payload: CreateSessionPayload = {
       studentId: user.id,
       tutorId: tutorProfileId,
-      subjectId,
+      subjectId: selectedSubject,
       scheduledAt: scheduledAt.toISOString(),
       duration,
       timeSlots: [...selectedSlots].sort(), // Store individual time slots
@@ -306,6 +330,37 @@ export function BookingModal({ tutor, onClose, onConfirm }: BookingModalProps) {
               </div>
             </div>
           </div>
+
+          {/* Subject Selection */}
+          {tutorSubjects.length > 1 && (
+            <div>
+              <Label htmlFor="subject-select" className="text-base font-medium">
+                Select Subject *
+              </Label>
+              <Select
+                value={selectedSubject}
+                onValueChange={setSelectedSubject}
+              >
+                <SelectTrigger id="subject-select" className="mt-2" data-testid="select-subject">
+                  <SelectValue placeholder="Choose a subject" />
+                </SelectTrigger>
+                <SelectContent>
+                  {tutorSubjects.map((subject) => {
+                    const price = tutor?.subjectPricing?.[subject.id];
+                    const displayPrice = price ? ` - ${formatMoney(Number(price))}/hr` : '';
+                    return (
+                      <SelectItem key={subject.id} value={subject.id}>
+                        {subject.name}{displayPrice}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Price varies by subject
+              </p>
+            </div>
+          )}
 
           <div className="grid md:grid-cols-2 gap-6">
             {/* Date Selection */}
@@ -403,6 +458,14 @@ export function BookingModal({ tutor, onClose, onConfirm }: BookingModalProps) {
           <div className="bg-secondary rounded-lg p-4">
             <h4 className="font-semibold mb-3">Booking Summary</h4>
             <div className="space-y-2 text-sm">
+              {selectedSubject && (
+                <div className="flex justify-between">
+                  <span>Subject:</span>
+                  <span className="font-medium">
+                    {tutorSubjects.find(s => s.id === selectedSubject)?.name ?? selectedSubject}
+                  </span>
+                </div>
+              )}
               {selectedDate && selectedSlots.length > 0 && (
                 <>
                   <div className="flex justify-between">
