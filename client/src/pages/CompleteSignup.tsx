@@ -201,12 +201,9 @@ export default function CompleteSignup() {
     const profileData = {
       ...t,
       hourlyRate,
-      certifications: t.certifications
-        ? t.certifications
-            .split(",")
-            .map((c) => c.trim())
-            .filter(Boolean)
-        : [],
+      // Don't send certifications field if it's just text - the schema expects file objects
+      // Certifications can be added later through the profile edit page
+      certifications: undefined,
     };
 
     completeSignupMutation.mutate({

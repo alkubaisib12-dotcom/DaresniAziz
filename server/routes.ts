@@ -739,8 +739,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ profile: finalProfile, user: joinedUser, subjects });
     } catch (error) {
-      console.error("Error creating tutor profile:", error);
+      console.error("Error creating tutor profile:", error instanceof Error ? error.message : String(error));
       if (error instanceof z.ZodError) {
+        console.error("Validation errors:", JSON.stringify(error.flatten().fieldErrors));
         res.status(400).json({ message: "Invalid request data", fieldErrors: error.flatten().fieldErrors });
       } else {
         res.status(500).json({ message: "Failed to create tutor profile", fieldErrors: {} });
@@ -812,8 +813,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.json({ profile: { id: ref.id, ...updatedProfile.data() }, user: joinedUser, subjects });
     } catch (error) {
-      console.error("Error updating tutor profile:", error);
+      console.error("Error updating tutor profile:", error instanceof Error ? error.message : String(error));
       if (error instanceof z.ZodError) {
+        console.error("Validation errors:", JSON.stringify(error.flatten().fieldErrors));
         res.status(400).json({ message: "Invalid request data", fieldErrors: error.flatten().fieldErrors });
       } else {
         res.status(500).json({ message: "Failed to update tutor profile", fieldErrors: {} });
