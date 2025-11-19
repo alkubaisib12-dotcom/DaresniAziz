@@ -15,6 +15,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/hooks/use-toast";
 import { SessionCard } from "@/components/SessionCard";
 import { ChatWindow } from "@/components/ChatWindow";
+import { StudyBuddyFAB } from "@/components/study-buddy/StudyBuddyPanel";
 
 import { Calendar, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
@@ -573,6 +574,9 @@ export default function StudentDashboard() {
       {showChat && chatUserId && (
         <ChatWindow userId={chatUserId} onClose={() => setShowChat(false)} />
       )}
+
+      {/* AI Study Buddy */}
+      <StudyBuddyFAB />
     </div>
   );
 }
