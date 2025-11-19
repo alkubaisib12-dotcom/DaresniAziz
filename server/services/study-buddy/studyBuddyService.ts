@@ -7,7 +7,7 @@
  * 3. Triggers tutor upsell logic
  * 4. Coordinates with other services (quiz, revision, etc.)
  */
-
+import type { StudyBuddyProgress } from "../../../shared/studyBuddyTypes";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   ChatRequest,
@@ -64,7 +64,8 @@ export async function handleChatMessage(
         suggestedTutor: true,
       });
 
-      return res.end();
+      res.end();
+      return;
     }
 
     // Handle special queries
@@ -77,7 +78,8 @@ export async function handleChatMessage(
       await saveMessage(convId, userId, "user", message);
       await saveMessage(convId, userId, "assistant", response);
 
-      return res.end();
+      res.end();
+      return;
     }
 
     if (isComparingAIvsTutor(message)) {
@@ -89,7 +91,8 @@ export async function handleChatMessage(
       await saveMessage(convId, userId, "user", message);
       await saveMessage(convId, userId, "assistant", response);
 
-      return res.end();
+      res.end();
+      return;
     }
 
     // Get or create conversation
@@ -160,7 +163,7 @@ export async function handleChatMessage(
 
     const upsellDecision = shouldSuggestTutor({
       userMessage: message,
-      progress: progress || undefined,
+      progress: progress ?? undefined,
       conversationHistory: updatedHistory,
       conversationLength: updatedHistory.length,
     });
@@ -397,7 +400,9 @@ async function getConversationHistory(
 /**
  * Get recent progress for tutor upsell logic
  */
-async function getRecentProgress(userId: string) {
+async function getRecentProgress(
+  userId: string
+): Promise<StudyBuddyProgress | null> {
   const progressSnapshot = await db
     .collection("study_buddy_progress")
     .where("userId", "==", userId)
@@ -407,7 +412,7 @@ async function getRecentProgress(userId: string) {
 
   if (progressSnapshot.empty) return null;
 
-  return progressSnapshot.docs[0].data();
+  return progressSnapshot.docs[0].data() as StudyBuddyProgress;
 }
 
 /**
