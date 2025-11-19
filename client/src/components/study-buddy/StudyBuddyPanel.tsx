@@ -87,7 +87,7 @@ export default function StudyBuddyPanel({ isOpen, onClose }: StudyBuddyPanelProp
   if (!isOpen) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 w-[400px] h-[600px] z-50 shadow-2xl animate-in slide-in-from-bottom-4">
+    <div className="fixed bottom-4 left-4 w-[400px] h-[600px] z-50 shadow-2xl animate-in slide-in-from-bottom-4">
       <Card className="h-full flex flex-col bg-white dark:bg-gray-900 border-2 border-primary/20">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-primary/10 to-blue-500/10">
@@ -207,7 +207,7 @@ export function StudyBuddyFAB() {
       {!isOpen && (
         <Button
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-4 right-4 w-14 h-14 rounded-full shadow-lg hover:shadow-xl transition-all z-40"
+          className="fixed bottom-4 left-4 w-14 h-14 rounded-full shadow-lg hover:shadow-xl transition-all z-40"
           size="icon"
         >
           <MessageCircle className="w-6 h-6" />
