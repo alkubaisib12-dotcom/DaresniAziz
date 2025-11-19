@@ -10,6 +10,7 @@ import { requireUser, requireAdmin, type AuthUser, fdb } from "./firebase-admin"
 import { z } from "zod";
 import { sendToAdmins, createTutorRegistrationEmail } from "./email";
 import { TutorRankingService } from "./services/tutorRanking";
+import studyBuddyRoutes from "./routes/studyBuddyRoutes";
 
 const chooseRoleSchema = z.object({
   role: z.enum(["student", "tutor", "admin"]),
@@ -2656,6 +2657,10 @@ app.get("/api/tutors/:id", async (req, res) => {
       });
     }
   });
+
+  // === STUDY BUDDY ROUTES ===
+  // Mount all Study Buddy API routes
+  app.use("/api/study-buddy", studyBuddyRoutes);
 
   const httpServer = createServer(app);
   return httpServer;
