@@ -92,36 +92,35 @@ Please generate a structured summary with exactly these four sections:
 
 Format your response as a JSON object with these exact keys: "whatWasLearned", "mistakes", "strengths", "practiceTasks". Each value should be a clear, well-formatted string.`;
 
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-  });
-
   // Try multiple model names in order of preference
-  // Use current 2025 models (1.0 and 1.5 models are deprecated)
-  const modelNames = [
-    "gemini-2.5-flash",    // Primary: fast and cost-efficient
-    "gemini-2.0-flash",    // Fallback 1: alternative flash model
-    "gemini-2.5-pro"       // Fallback 2: more capable but slower
-  ];
+const modelNames = [
+  "gemini-2.5-flash",  // Primary: fast and cost-efficient
+  "gemini-2.0-flash",  // Fallback 1: alternative flash model
+  "gemini-2.5-pro",    // Fallback 2: more capable but slower
+];
 
-  let model;
-  let lastError;
+let model: any;
+let lastError: any;
 
-  for (const modelName of modelNames) {
-    try {
-      model = genAI.getGenerativeModel({ model: modelName });
-      // Test the model with a simple call to verify it's available
-      break;
-    } catch (e: any) {
-      lastError = e;
-      console.log(`Model ${modelName} not available, trying next...`);
-      continue;
-    }
+for (const modelName of modelNames) {
+  try {
+    model = genAI.getGenerativeModel({ model: modelName });
+    // If that line didn't throw, we’re good – stop trying others
+    break;
+  } catch (e: any) {
+    lastError = e;
+    console.log(`Model ${modelName} not available, trying next...`);
+    continue;
   }
+}
 
-  if (!model) {
-    throw new Error(`Unable to initialize any Gemini AI model. Last error: ${lastError?.message || 'Unknown'}. Please check your API key or try again later.`);
-  }
+if (!model) {
+  throw new Error(
+    `Unable to initialize any Gemini AI model. Last error: ${
+      lastError?.message || "Unknown"
+    }`
+  );
+}
 
   try {
     const result = await model.generateContent(prompt);
