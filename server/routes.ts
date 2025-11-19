@@ -75,6 +75,24 @@ const createReviewSchema = z.object({
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// ============================================================
+// IN-MEMORY CACHING FOR HEAVY READ ENDPOINTS
+// ============================================================
+// Cache for /api/subjects
+let cachedSubjects: any[] | null = null;
+let cachedSubjectsFetchedAt = 0;
+const SUBJECTS_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// Cache for /api/stats
+let cachedStats: { tutors: number; students: number; sessions: number } | null = null;
+let cachedStatsFetchedAt = 0;
+const STATS_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+// Cache for /api/tutors
+let cachedTutors: any[] | null = null;
+let cachedTutorsFetchedAt = 0;
+const TUTORS_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 function now() {
   return new Date();
 }
@@ -362,6 +380,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/stats", async (_req, res) => {
     try {
+      // Check cache first
+      const now = Date.now();
+      if (cachedStats && (now - cachedStatsFetchedAt) < STATS_TTL_MS) {
+        console.log("[/api/stats] Serving from cache");
+        return res.json(cachedStats);
+      }
+
+      // Cache miss - fetch from Firestore
+      console.log("[/api/stats] Fetching from Firestore");
       const tutorsAgg = await fdb!
         .collection("tutor_profiles")
         .where("isVerified", "==", true)
@@ -377,11 +404,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .count()
         .get();
 
-      res.json({
+      const stats = {
         tutors: tutorsAgg.data().count || 0,
         students: studentsAgg.data().count || 0,
         sessions: completedAgg.data().count || 0,
-      });
+      };
+
+      // Update cache
+      cachedStats = stats;
+      cachedStatsFetchedAt = now;
+
+      res.json(stats);
     } catch (error) {
       console.error("Error fetching platform stats:", error);
       res.status(500).json({ message: "Failed to fetch platform statistics", fieldErrors: {} });
@@ -591,8 +624,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/subjects", async (_req, res) => {
     try {
       if (!fdb) return res.status(500).json({ message: "Firestore not initialized" });
+
+      // Check cache first
+      const now = Date.now();
+      if (cachedSubjects && (now - cachedSubjectsFetchedAt) < SUBJECTS_TTL_MS) {
+        console.log("[/api/subjects] Serving from cache");
+        res.set("Cache-Control", "public, max-age=60");
+        return res.json(cachedSubjects);
+      }
+
+      // Cache miss - fetch from Firestore
+      console.log("[/api/subjects] Fetching from Firestore");
       const snap = await fdb.collection("subjects").orderBy("name").get();
       const all = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+
+      // Update cache
+      cachedSubjects = all;
+      cachedSubjectsFetchedAt = now;
+
       res.set("Cache-Control", "public, max-age=60");
       res.json(all);
     } catch (err) {
@@ -631,6 +680,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
       }
       await batch.commit();
+
+      // Invalidate subjects cache
+      cachedSubjects = null;
+      console.log("[Cache] Subjects cache invalidated");
+
       res.json({ message: "Basic subjects seeded successfully" });
     } catch (err) {
       console.error("Error seeding subjects:", err);
@@ -737,6 +791,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         subjects = sids.map((sid) => (map.get(sid) ? { id: sid, ...map.get(sid)! } : null)).filter(Boolean) as any[];
       }
 
+      // Invalidate tutors cache since profile was created/updated
+      cachedTutors = null;
+      console.log("[Cache] Tutors cache invalidated");
+
       res.json({ profile: finalProfile, user: joinedUser, subjects });
     } catch (error) {
       console.error("Error creating tutor profile:", error instanceof Error ? error.message : String(error));
@@ -810,6 +868,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const map = await batchLoadMap<any>("subjects", sids);
         subjects = sids.map((sid) => (map.get(sid) ? { id: sid, ...map.get(sid)! } : null)).filter(Boolean) as any[];
       }
+
+      // Invalidate tutors cache since profile was updated
+      cachedTutors = null;
+      console.log("[Cache] Tutors cache invalidated");
 
       res.json({ profile: { id: ref.id, ...updatedProfile.data() }, user: joinedUser, subjects });
     } catch (error) {
@@ -1095,6 +1157,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const snap = await ref.get();
       if (!snap.exists) return res.status(404).json({ message: "Tutor profile not found", fieldErrors: {} });
       await ref.set({ isVerified: true, isActive: true, updatedAt: now() }, { merge: true });
+
+      // Invalidate tutors and stats cache since verification affects both
+      cachedTutors = null;
+      cachedStats = null;
+      console.log("[Cache] Tutors and Stats cache invalidated");
+
       res.json({ message: "Tutor verified successfully" });
     } catch (error) {
       console.error("Error verifying tutor:", error);
@@ -1221,12 +1289,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 // === TUTORS LISTING (with subjects + reviews) ===
 app.get("/api/tutors", async (_req, res) => {
   try {
+    // Check cache first
+    const now = Date.now();
+    if (cachedTutors && (now - cachedTutorsFetchedAt) < TUTORS_TTL_MS) {
+      console.log("[/api/tutors] Serving from cache");
+      return res.json(cachedTutors);
+    }
+
+    // Cache miss - fetch from Firestore
+    console.log("[/api/tutors] Fetching from Firestore");
     const profs = await listCollection<any>("tutor_profiles", [
       ["isActive", "==", true],
       ["isVerified", "==", true],
     ]);
 
-    if (profs.length === 0) return res.json([]);
+    if (profs.length === 0) {
+      cachedTutors = [];
+      cachedTutorsFetchedAt = now;
+      return res.json([]);
+    }
 
     const userIds = profs.map((p) => p.userId).filter(Boolean);
     const tutorIds = profs.map((p) => p.id);
@@ -1319,6 +1400,10 @@ app.get("/api/tutors", async (_req, res) => {
         totalReviews: reviewCount,
       };
     });
+
+    // Update cache
+    cachedTutors = tutorsWithSubjects;
+    cachedTutorsFetchedAt = now;
 
     res.json(tutorsWithSubjects);
   } catch (error) {
@@ -1857,6 +1942,13 @@ app.get("/api/tutors/:id", async (req, res) => {
       }
 
       await ref.set({ status, updatedAt: now() }, { merge: true });
+
+      // Invalidate stats cache if session was completed
+      if (status === "completed") {
+        cachedStats = null;
+        console.log("[Cache] Stats cache invalidated");
+      }
+
       const updated = await ref.get();
       res.json({ id: updated.id, ...updated.data() });
     } catch (error) {
@@ -2432,6 +2524,11 @@ app.get("/api/tutors/:id", async (req, res) => {
           batch.set(ref, { name: s.name, description: s.description, category: s.category, createdAt: now() });
         });
         await batch.commit();
+
+        // Invalidate subjects cache
+        cachedSubjects = null;
+        console.log("[Cache] Subjects cache invalidated");
+
         res.json({ message: "Basic subjects seeded successfully" });
       } else {
         res.json({ message: "Subjects already exist" });
