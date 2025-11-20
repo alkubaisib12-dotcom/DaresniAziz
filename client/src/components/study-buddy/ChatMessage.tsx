@@ -47,8 +47,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
             "rounded-lg px-4 py-3 text-sm",
             isUser
               ? "bg-blue-500 text-white"
-              : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100",
-            message.isStreaming && "animate-pulse"
+              : "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100"
           )}
         >
           {isAssistant ? (
