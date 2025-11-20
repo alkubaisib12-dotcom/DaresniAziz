@@ -8,7 +8,7 @@
  * - Current knowledge level
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
   StudyBuddyRevisionPlan,
   DailyTask,
@@ -20,9 +20,7 @@ import { Timestamp } from "firebase-admin/firestore";
 import { db } from "../../firebase-admin";
 import { buildStudentContext, formatContextForAI } from "./contextBuilder";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || "",
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 /**
  * Generate a personalized revision plan
@@ -67,8 +65,8 @@ export async function generateRevisionPlan(
     (p) => p.subjectId === subjectId
   );
 
-  // Generate plan using Claude
-  const dailyTasks = await generatePlanWithClaude({
+  // Generate plan using Gemini
+  const dailyTasks = await generatePlanWithGemini({
     subjectName,
     daysUntilExam,
     dailyStudyHours,
@@ -118,9 +116,9 @@ export async function generateRevisionPlan(
 }
 
 /**
- * Generate revision plan using Claude AI
+ * Generate revision plan using Gemini AI
  */
-async function generatePlanWithClaude(params: {
+async function generatePlanWithGemini(params: {
   subjectName: string;
   daysUntilExam: number;
   dailyStudyHours: number;
@@ -177,25 +175,20 @@ Create a day-by-day revision plan that:
 Generate a plan for all ${daysUntilExam} days.`;
 
   try {
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 8000,
-      temperature: 0.7,
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 8000,
+      },
     });
 
-    const content = response.content[0];
-    if (content.type !== "text") {
-      throw new Error("Unexpected response type from Claude");
-    }
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const responseText = response.text();
 
     // Extract JSON from response
-    let jsonText = content.text.trim();
+    let jsonText = responseText.trim();
     if (jsonText.startsWith("```json")) {
       jsonText = jsonText.replace(/```json\n?/g, "").replace(/```\n?$/g, "");
     } else if (jsonText.startsWith("```")) {
@@ -222,7 +215,7 @@ Generate a plan for all ${daysUntilExam} days.`;
 
     return dailyTasks;
   } catch (error) {
-    console.error("Error generating revision plan with Claude:", error);
+    console.error("Error generating revision plan with Gemini:", error);
 
     // Fallback: generate simple plan
     return generateFallbackPlan(
@@ -235,7 +228,7 @@ Generate a plan for all ${daysUntilExam} days.`;
 }
 
 /**
- * Fallback plan generator if Claude API fails
+ * Fallback plan generator if Gemini API fails
  */
 function generateFallbackPlan(
   subjectName: string,

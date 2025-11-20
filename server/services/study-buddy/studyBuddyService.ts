@@ -8,7 +8,7 @@
  * 4. Coordinates with other services (quiz, revision, etc.)
  */
 import type { StudyBuddyProgress } from "../../../shared/studyBuddyTypes";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
   ChatRequest,
   StudyBuddyMessage,
@@ -31,9 +31,7 @@ import {
 } from "./tutorUpsell";
 import { Response } from "express";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "",
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 /**
  * Handle chat message with streaming response
@@ -118,26 +116,29 @@ export async function handleChatMessage(
     // Build system prompt
     const systemPrompt = buildSystemPrompt(contextText);
 
-    // Build messages for OpenAI
-    const messages = buildMessagesForOpenAI(history, message, systemPrompt);
-
-    // Stream response from OpenAI
-    let fullResponse = "";
-
-    const stream = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_tokens: 4000,
-      temperature: 0.7,
-      messages,
-      stream: true,
+    // Get Gemini model
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 4000,
+      },
     });
 
+    // Build conversation for Gemini
+    const conversationText = buildConversationForGemini(history, message, systemPrompt);
+
+    // Stream response from Gemini
+    let fullResponse = "";
+
+    const result = await model.generateContentStream(conversationText);
+
     // Handle stream events
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content || "";
-      if (content) {
-        fullResponse += content;
-        sendStreamEvent(res, { type: "token", content });
+    for await (const chunk of result.stream) {
+      const chunkText = chunk.text();
+      if (chunkText) {
+        fullResponse += chunkText;
+        sendStreamEvent(res, { type: "token", content: chunkText });
       }
     }
 
@@ -243,38 +244,27 @@ Remember: Your goal is to help students LEARN, not just get answers. Always prio
 }
 
 /**
- * Build messages array for OpenAI API
+ * Build conversation text for Gemini API
  */
-function buildMessagesForOpenAI(
+function buildConversationForGemini(
   history: StudyBuddyMessage[],
   currentMessage: string,
   systemPrompt: string
-): OpenAI.Chat.ChatCompletionMessageParam[] {
-  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-
-  // Add system prompt as first message
-  messages.push({
-    role: "system",
-    content: systemPrompt,
-  });
+): string {
+  let conversationText = systemPrompt + "\n\n---\n\n";
 
   // Add conversation history (limit to recent messages to stay within context)
   history.slice(-10).forEach((msg) => {
     if (msg.role !== "system") {
-      messages.push({
-        role: msg.role === "assistant" ? "assistant" : "user",
-        content: msg.content,
-      });
+      const role = msg.role === "assistant" ? "Assistant" : "Student";
+      conversationText += `${role}: ${msg.content}\n\n`;
     }
   });
 
   // Add current message
-  messages.push({
-    role: "user",
-    content: currentMessage,
-  });
+  conversationText += `Student: ${currentMessage}\n\nAssistant:`;
 
-  return messages;
+  return conversationText;
 }
 
 /**

@@ -1,13 +1,13 @@
 /**
  * Quiz Generator Service
  *
- * Generates adaptive quizzes using Claude AI based on:
+ * Generates adaptive quizzes using Google Gemini AI based on:
  * - Subject and topic
  * - Student's current difficulty level
  * - Past performance and weak areas
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
   QuizQuestion,
   StudyBuddyQuiz,
@@ -20,10 +20,8 @@ import { Timestamp } from "firebase-admin/firestore";
 import { db } from "../../firebase-admin";
 import { recommendStartingDifficulty } from "./adaptiveDifficulty";
 
-// Initialize Anthropic client
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || "",
-});
+// Initialize Gemini client
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 /**
  * Generate a quiz based on student's needs
@@ -54,8 +52,8 @@ export async function generateQuiz(
   // Fetch student progress for personalization
   const progress = await getStudentProgress(userId, subjectId, topic);
 
-  // Generate questions using Claude
-  const questions = await generateQuestionsWithClaude({
+  // Generate questions using Gemini
+  const questions = await generateQuestionsWithGemini({
     subjectName,
     topic: topic || subjectName,
     difficulty,
@@ -94,9 +92,9 @@ export async function generateQuiz(
 }
 
 /**
- * Generate questions using Claude AI
+ * Generate questions using Gemini AI
  */
-async function generateQuestionsWithClaude(params: {
+async function generateQuestionsWithGemini(params: {
   subjectName: string;
   topic: string;
   difficulty: Difficulty;
@@ -159,26 +157,20 @@ Generate ${questionCount} multiple-choice questions following these requirements
 Note: correctAnswer is the index (0-3) of the correct option in the options array.`;
 
   try {
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 4000,
-      temperature: 0.7,
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 4000,
+      },
     });
 
-    // Parse Claude's response
-    const content = response.content[0];
-    if (content.type !== "text") {
-      throw new Error("Unexpected response type from Claude");
-    }
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const responseText = response.text();
 
     // Extract JSON from response (handle markdown code blocks)
-    let jsonText = content.text.trim();
+    let jsonText = responseText.trim();
     if (jsonText.startsWith("```json")) {
       jsonText = jsonText.replace(/```json\n?/g, "").replace(/```\n?$/g, "");
     } else if (jsonText.startsWith("```")) {
@@ -201,7 +193,7 @@ Note: correctAnswer is the index (0-3) of the correct option in the options arra
 
     return questions;
   } catch (error) {
-    console.error("Error generating questions with Claude:", error);
+    console.error("Error generating questions with Gemini:", error);
 
     // Fallback: generate simple questions
     return generateFallbackQuestions(topic, difficulty, questionCount);
@@ -209,7 +201,7 @@ Note: correctAnswer is the index (0-3) of the correct option in the options arra
 }
 
 /**
- * Fallback question generator if Claude API fails
+ * Fallback question generator if Gemini API fails
  */
 function generateFallbackQuestions(
   topic: string,
