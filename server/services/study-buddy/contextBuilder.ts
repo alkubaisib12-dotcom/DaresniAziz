@@ -78,37 +78,48 @@ export async function buildStudentContext(
 async function getEnrolledSubjects(
   userId: string
 ): Promise<StudentContext["enrolledSubjects"]> {
-  // Get unique subject IDs from student's sessions
-  const sessionsSnapshot = await db
-    .collection("tutoring_sessions")
-    .where("studentId", "==", userId)
-    .orderBy("scheduledAt", "desc")
-    .limit(50)
-    .get();
+  try {
+    // Get unique subject IDs from student's sessions
+    const sessionsSnapshot = await db
+      .collection("tutoring_sessions")
+      .where("studentId", "==", userId)
+      .orderBy("scheduledAt", "desc")
+      .limit(50)
+      .get();
 
-  const subjectIds = new Set<string>();
-  sessionsSnapshot.docs.forEach((doc) => {
-    const data = doc.data();
-    if (data.subjectId) {
-      subjectIds.add(data.subjectId);
-    }
-  });
+    const subjectIds = new Set<string>();
+    sessionsSnapshot.docs.forEach((doc) => {
+      const data = doc.data();
+      if (data.subjectId) {
+        subjectIds.add(data.subjectId);
+      }
+    });
 
-  // Fetch subject details
-  const subjects: StudentContext["enrolledSubjects"] = [];
-  for (const subjectId of subjectIds) {
-    const subjectDoc = await db.collection("subjects").doc(subjectId).get();
-    if (subjectDoc.exists) {
-      const subjectData = subjectDoc.data();
-      subjects.push({
-        subjectId,
-        subjectName: subjectData?.name || "Unknown Subject",
-        description: subjectData?.description,
-      });
+    // Fetch subject details
+    const subjects: StudentContext["enrolledSubjects"] = [];
+    for (const subjectId of subjectIds) {
+      const subjectDoc = await db.collection("subjects").doc(subjectId).get();
+      if (subjectDoc.exists) {
+        const subjectData = subjectDoc.data();
+        subjects.push({
+          subjectId,
+          subjectName: subjectData?.name || "Unknown Subject",
+          description: subjectData?.description,
+        });
+      }
     }
+
+    return subjects;
+  } catch (error: any) {
+    // Handle missing index error gracefully
+    if (error?.code === 9) {
+      console.warn(
+        "Firebase index missing for tutoring_sessions query. Returning empty subjects list."
+      );
+      return [];
+    }
+    throw error;
   }
-
-  return subjects;
 }
 
 /**
@@ -163,52 +174,63 @@ async function getRecentSessions(
   userId: string,
   limit: number
 ): Promise<StudentContext["recentSessions"]> {
-  const sessionsSnapshot = await db
-    .collection("tutoring_sessions")
-    .where("studentId", "==", userId)
-    .where("status", "==", "completed")
-    .orderBy("scheduledAt", "desc")
-    .limit(limit)
-    .get();
+  try {
+    const sessionsSnapshot = await db
+      .collection("tutoring_sessions")
+      .where("studentId", "==", userId)
+      .where("status", "==", "completed")
+      .orderBy("scheduledAt", "desc")
+      .limit(limit)
+      .get();
 
-  const sessions: NonNullable<StudentContext["recentSessions"]> = [];
+    const sessions: NonNullable<StudentContext["recentSessions"]> = [];
 
-  for (const doc of sessionsSnapshot.docs) {
-    const session = doc.data();
+    for (const doc of sessionsSnapshot.docs) {
+      const session = doc.data();
 
-    // Fetch subject name
-    let subjectName = "Unknown Subject";
-    if (session.subjectId) {
-      const subjectDoc = await db
-        .collection("subjects")
-        .doc(session.subjectId)
-        .get();
-      if (subjectDoc.exists) {
-        subjectName = subjectDoc.data()?.name || subjectName;
+      // Fetch subject name
+      let subjectName = "Unknown Subject";
+      if (session.subjectId) {
+        const subjectDoc = await db
+          .collection("subjects")
+          .doc(session.subjectId)
+          .get();
+        if (subjectDoc.exists) {
+          subjectName = subjectDoc.data()?.name || subjectName;
+        }
       }
+
+      // Fetch tutor name
+      let tutorName = "Unknown Tutor";
+      if (session.tutorId) {
+        const tutorDoc = await db.collection("users").doc(session.tutorId).get();
+        if (tutorDoc.exists) {
+          const tutorData = tutorDoc.data();
+          tutorName = `${tutorData?.firstName || ""} ${tutorData?.lastName || ""}`.trim();
+        }
+      }
+
+      sessions.push({
+        sessionId: doc.id,
+        subjectName,
+        tutorName,
+        date: session.scheduledAt?.toDate?.()?.toISOString() || "",
+        notes: session.tutorNotes,
+        aiSummary: session.aiSummary,
+      });
     }
 
-    // Fetch tutor name
-    let tutorName = "Unknown Tutor";
-    if (session.tutorId) {
-      const tutorDoc = await db.collection("users").doc(session.tutorId).get();
-      if (tutorDoc.exists) {
-        const tutorData = tutorDoc.data();
-        tutorName = `${tutorData?.firstName || ""} ${tutorData?.lastName || ""}`.trim();
-      }
+    return sessions;
+  } catch (error: any) {
+    // Handle missing index error gracefully
+    if (error?.code === 9) {
+      console.warn(
+        "Firebase index missing for tutoring_sessions query. Returning empty sessions list."
+      );
+      return [];
     }
-
-    sessions.push({
-      sessionId: doc.id,
-      subjectName,
-      tutorName,
-      date: session.scheduledAt?.toDate?.()?.toISOString() || "",
-      notes: session.tutorNotes,
-      aiSummary: session.aiSummary,
-    });
+    throw error;
   }
-
-  return sessions;
 }
 
 /**
@@ -312,44 +334,63 @@ async function calculateStudyStreak(userId: string): Promise<number> {
 async function calculateTotalStudyTime(userId: string): Promise<number> {
   let totalMinutes = 0;
 
-  // Count time from quiz attempts
-  const quizAttemptsSnapshot = await db
-    .collection("study_buddy_quiz_attempts")
-    .where("userId", "==", userId)
-    .get();
+  try {
+    // Count time from quiz attempts
+    const quizAttemptsSnapshot = await db
+      .collection("study_buddy_quiz_attempts")
+      .where("userId", "==", userId)
+      .get();
 
-  quizAttemptsSnapshot.docs.forEach((doc) => {
-    const attempt = doc.data();
-    if (attempt.answers) {
-      const quizTime = attempt.answers.reduce(
-        (sum: number, ans: any) => sum + (ans.timeSpentSeconds || 0),
-        0
+    quizAttemptsSnapshot.docs.forEach((doc) => {
+      const attempt = doc.data();
+      if (attempt.answers) {
+        const quizTime = attempt.answers.reduce(
+          (sum: number, ans: any) => sum + (ans.timeSpentSeconds || 0),
+          0
+        );
+        totalMinutes += quizTime / 60;
+      }
+    });
+  } catch (error: any) {
+    console.warn("Error fetching quiz attempts for study time:", error);
+  }
+
+  try {
+    // Count time from completed sessions
+    const sessionsSnapshot = await db
+      .collection("tutoring_sessions")
+      .where("studentId", "==", userId)
+      .where("status", "==", "completed")
+      .get();
+
+    sessionsSnapshot.docs.forEach((doc) => {
+      const session = doc.data();
+      totalMinutes += session.duration || 60; // Default to 60 min if not specified
+    });
+  } catch (error: any) {
+    // Handle missing index error gracefully
+    if (error?.code === 9) {
+      console.warn(
+        "Firebase index missing for tutoring_sessions query. Skipping session time calculation."
       );
-      totalMinutes += quizTime / 60;
+    } else {
+      console.warn("Error fetching sessions for study time:", error);
     }
-  });
+  }
 
-  // Count time from completed sessions
-  const sessionsSnapshot = await db
-    .collection("tutoring_sessions")
-    .where("studentId", "==", userId)
-    .where("status", "==", "completed")
-    .get();
+  try {
+    // Estimate time from conversation messages (rough estimate)
+    const messagesSnapshot = await db
+      .collection("study_buddy_messages")
+      .where("userId", "==", userId)
+      .where("role", "==", "user")
+      .get();
 
-  sessionsSnapshot.docs.forEach((doc) => {
-    const session = doc.data();
-    totalMinutes += session.duration || 60; // Default to 60 min if not specified
-  });
-
-  // Estimate time from conversation messages (rough estimate)
-  const messagesSnapshot = await db
-    .collection("study_buddy_messages")
-    .where("userId", "==", userId)
-    .where("role", "==", "user")
-    .get();
-
-  // Assume ~2 minutes per user message (reading + thinking + typing)
-  totalMinutes += messagesSnapshot.size * 2;
+    // Assume ~2 minutes per user message (reading + thinking + typing)
+    totalMinutes += messagesSnapshot.size * 2;
+  } catch (error: any) {
+    console.warn("Error fetching messages for study time:", error);
+  }
 
   return Math.round(totalMinutes / 60); // Convert to hours
 }
