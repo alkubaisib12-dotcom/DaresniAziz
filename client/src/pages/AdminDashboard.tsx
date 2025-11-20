@@ -24,7 +24,12 @@ import {
   Shield,
   Eye,
   XCircle,
+  TrendingUp,
+  DollarSign,
+  BarChart3,
+  Activity,
 } from "lucide-react";
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -95,6 +100,32 @@ interface AdminUser {
   createdAt: string;
 }
 
+interface AnalyticsData {
+  userGrowth: Array<{ date: string; students: number; tutors: number }>;
+  sessionStats: {
+    completed: number;
+    scheduled: number;
+    pending: number;
+    cancelled: number;
+    inProgress: number;
+  };
+  subjectStats: Array<{ name: string; sessions: number }>;
+  overview: {
+    totalStudents: number;
+    totalTutors: number;
+    verifiedTutors: number;
+    totalSessions: number;
+    completedSessions: number;
+    completionRate: number;
+    totalRevenue: number;
+  };
+  recentActivity: Array<{
+    id: string;
+    status: string;
+    scheduledAt: string;
+  }>;
+}
+
 export default function AdminDashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -104,8 +135,8 @@ export default function AdminDashboard() {
   const isAdmin = user?.role === "admin";
 
   const [currentTab, setCurrentTab] = useState<
-    "pending" | "notifications" | "students" | "tutors" | "admins"
-  >("pending");
+    "analytics" | "pending" | "notifications" | "students" | "tutors" | "admins"
+  >("analytics");
   const [userToDelete, setUserToDelete] = useState<{ id: string; type: string; name: string } | null>(
     null,
   );
@@ -118,6 +149,13 @@ export default function AdminDashboard() {
       navigate("/", { replace: true });
     }
   }, [authLoading, isAdmin, navigate]);
+
+  // Fetch analytics data
+  const { data: analytics, isLoading: analyticsLoading } = useQuery<AnalyticsData>({
+    queryKey: ["/api/admin/analytics"],
+    enabled: isAdmin && currentTab === "analytics",
+    staleTime: 60000, // Cache for 1 minute
+  });
 
   // Fetch notifications
   const {
@@ -402,10 +440,14 @@ export default function AdminDashboard() {
         onValueChange={(v: any) => setCurrentTab(v)}
         className="space-y-6"
       >
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
+          <TabsTrigger value="analytics">
+            <BarChart3 className="h-4 w-4 mr-2" />
+            Analytics
+          </TabsTrigger>
           <TabsTrigger value="pending" className="relative">
             <Clock className="h-4 w-4 mr-2" />
-            Pending Review
+            Pending
             {pendingCount > 0 && (
               <Badge
                 variant="destructive"
@@ -417,7 +459,7 @@ export default function AdminDashboard() {
           </TabsTrigger>
           <TabsTrigger value="notifications">
             <Bell className="h-4 w-4 mr-2" />
-            Notifications
+            Alerts
             {unreadCount > 0 && <Badge variant="destructive">{unreadCount}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="students">
@@ -426,13 +468,239 @@ export default function AdminDashboard() {
           </TabsTrigger>
           <TabsTrigger value="tutors">
             <GraduationCap className="h-4 w-4 mr-2" />
-            All Tutors
+            Tutors
           </TabsTrigger>
           <TabsTrigger value="admins">
             <Shield className="h-4 w-4 mr-2" />
             Admins
           </TabsTrigger>
         </TabsList>
+
+        {/* ANALYTICS TAB */}
+        <TabsContent value="analytics">
+          {analyticsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#9B1B30]" />
+            </div>
+          ) : analytics ? (
+            <div className="space-y-6">
+              {/* Overview Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Total Sessions</p>
+                        <p className="text-3xl font-bold">{analytics.overview.totalSessions}</p>
+                        <p className="text-xs text-green-600 mt-1">
+                          {analytics.overview.completedSessions} completed
+                        </p>
+                      </div>
+                      <Activity className="h-10 w-10 text-blue-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Completion Rate</p>
+                        <p className="text-3xl font-bold">{analytics.overview.completionRate}%</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Success metric
+                        </p>
+                      </div>
+                      <TrendingUp className="h-10 w-10 text-green-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Total Revenue</p>
+                        <p className="text-3xl font-bold">{formatMoney(analytics.overview.totalRevenue)}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          From completed sessions
+                        </p>
+                      </div>
+                      <DollarSign className="h-10 w-10 text-[#9B1B30]" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Active Tutors</p>
+                        <p className="text-3xl font-bold">{analytics.overview.verifiedTutors}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {analytics.overview.totalTutors} total
+                        </p>
+                      </div>
+                      <Users className="h-10 w-10 text-purple-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Charts Row */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* User Growth Chart */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      User Growth (Last 30 Days)
+                    </CardTitle>
+                    <CardDescription>Students and tutors registered over time</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={analytics.userGrowth}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="date"
+                          tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          fontSize={12}
+                        />
+                        <YAxis fontSize={12} />
+                        <Tooltip
+                          labelFormatter={(value) => new Date(value).toLocaleDateString()}
+                          contentStyle={{ fontSize: 12 }}
+                        />
+                        <Legend />
+                        <Line type="monotone" dataKey="students" stroke="#3b82f6" strokeWidth={2} name="Students" />
+                        <Line type="monotone" dataKey="tutors" stroke="#9B1B30" strokeWidth={2} name="Tutors" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                {/* Session Status Distribution */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <BarChart3 className="h-5 w-5" />
+                      Session Status Distribution
+                    </CardTitle>
+                    <CardDescription>Breakdown of all sessions by status</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: 'Completed', value: analytics.sessionStats.completed, color: '#10b981' },
+                            { name: 'Scheduled', value: analytics.sessionStats.scheduled, color: '#3b82f6' },
+                            { name: 'Pending', value: analytics.sessionStats.pending, color: '#f59e0b' },
+                            { name: 'Cancelled', value: analytics.sessionStats.cancelled, color: '#ef4444' },
+                            { name: 'In Progress', value: analytics.sessionStats.inProgress, color: '#8b5cf6' },
+                          ].filter(item => item.value > 0)}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                          outerRadius={100}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {[
+                            { name: 'Completed', value: analytics.sessionStats.completed, color: '#10b981' },
+                            { name: 'Scheduled', value: analytics.sessionStats.scheduled, color: '#3b82f6' },
+                            { name: 'Pending', value: analytics.sessionStats.pending, color: '#f59e0b' },
+                            { name: 'Cancelled', value: analytics.sessionStats.cancelled, color: '#ef4444' },
+                            { name: 'In Progress', value: analytics.sessionStats.inProgress, color: '#8b5cf6' },
+                          ].filter(item => item.value > 0).map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Popular Subjects Bar Chart */}
+              {analytics.subjectStats.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <BookOpen className="h-5 w-5" />
+                      Most Popular Subjects
+                    </CardTitle>
+                    <CardDescription>Subjects with the highest number of sessions</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart data={analytics.subjectStats}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" fontSize={12} angle={-45} textAnchor="end" height={100} />
+                        <YAxis fontSize={12} />
+                        <Tooltip contentStyle={{ fontSize: 12 }} />
+                        <Bar dataKey="sessions" fill="#9B1B30" name="Sessions" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Quick Stats Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
+                  <CardContent className="p-6">
+                    <div className="text-center">
+                      <BookOpen className="h-8 w-8 mx-auto mb-2 text-blue-600" />
+                      <p className="text-sm font-medium text-muted-foreground">Total Students</p>
+                      <p className="text-4xl font-bold text-blue-900 my-2">{analytics.overview.totalStudents}</p>
+                      <p className="text-xs text-blue-700">Registered on platform</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-purple-50 to-purple-100">
+                  <CardContent className="p-6">
+                    <div className="text-center">
+                      <GraduationCap className="h-8 w-8 mx-auto mb-2 text-purple-600" />
+                      <p className="text-sm font-medium text-muted-foreground">Total Tutors</p>
+                      <p className="text-4xl font-bold text-purple-900 my-2">{analytics.overview.totalTutors}</p>
+                      <p className="text-xs text-purple-700">
+                        {analytics.overview.verifiedTutors} verified
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-green-50 to-green-100">
+                  <CardContent className="p-6">
+                    <div className="text-center">
+                      <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-600" />
+                      <p className="text-sm font-medium text-muted-foreground">Completed Sessions</p>
+                      <p className="text-4xl font-bold text-green-900 my-2">{analytics.overview.completedSessions}</p>
+                      <p className="text-xs text-green-700">
+                        {analytics.overview.completionRate}% completion rate
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <AlertCircle className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+                <p className="text-lg font-medium">No analytics data available</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Data will appear once there is activity on the platform
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
 
         {/* PENDING TUTORS TAB */}
         <TabsContent value="pending">

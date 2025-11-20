@@ -1099,6 +1099,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin analytics endpoint
+  app.get("/api/admin/analytics", requireUser, requireAdmin, async (_req, res) => {
+    try {
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      // Get all users with timestamps
+      const usersSnap = await fdb!.collection("users").get();
+      const users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+
+      // Get all sessions
+      const sessionsSnap = await fdb!.collection("tutoring_sessions").get();
+      const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+
+      // Get all tutor profiles for subjects
+      const tutorProfiles = await listCollection<any>("tutor_profiles");
+
+      // Calculate user growth (last 30 days)
+      const userGrowth: { date: string; students: number; tutors: number }[] = [];
+      for (let i = 29; i >= 0; i--) {
+        const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+        const dateStr = date.toISOString().split('T')[0];
+
+        const studentsCount = users.filter(u => {
+          if (u.role !== 'student') return false;
+          const createdAt = u.createdAt?.toDate ? u.createdAt.toDate() : new Date(u.createdAt);
+          return createdAt <= date;
+        }).length;
+
+        const tutorsCount = users.filter(u => {
+          if (u.role !== 'tutor') return false;
+          const createdAt = u.createdAt?.toDate ? u.createdAt.toDate() : new Date(u.createdAt);
+          return createdAt <= date;
+        }).length;
+
+        userGrowth.push({ date: dateStr, students: studentsCount, tutors: tutorsCount });
+      }
+
+      // Session statistics
+      const sessionStats = {
+        completed: sessions.filter(s => s.status === 'completed').length,
+        scheduled: sessions.filter(s => s.status === 'scheduled').length,
+        pending: sessions.filter(s => s.status === 'pending').length,
+        cancelled: sessions.filter(s => s.status === 'cancelled').length,
+        inProgress: sessions.filter(s => s.status === 'in-progress').length,
+      };
+
+      // Get all subjects and count sessions per subject
+      const subjectsSnap = await fdb!.collection("subjects").get();
+      const subjects = subjectsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+
+      const subjectStats = subjects.map(subject => {
+        const count = sessions.filter(s => s.subjectId === subject.id).length;
+        return {
+          name: subject.name,
+          sessions: count,
+        };
+      }).filter(s => s.sessions > 0).sort((a, b) => b.sessions - a.sessions).slice(0, 8);
+
+      // Calculate revenue (from completed sessions)
+      const totalRevenue = sessions
+        .filter(s => s.status === 'completed')
+        .reduce((sum, s) => {
+          const price = s.priceCents ? s.priceCents / 100 : (s.price || 0);
+          return sum + price;
+        }, 0);
+
+      // Session completion rate
+      const totalSessionsBooked = sessions.length;
+      const completedSessions = sessionStats.completed;
+      const completionRate = totalSessionsBooked > 0
+        ? Math.round((completedSessions / totalSessionsBooked) * 100)
+        : 0;
+
+      // Recent activity (last 10 sessions)
+      const recentSessions = sessions
+        .sort((a, b) => {
+          const aDate = a.scheduledAt?.toDate ? a.scheduledAt.toDate() : new Date(a.scheduledAt);
+          const bDate = b.scheduledAt?.toDate ? b.scheduledAt.toDate() : new Date(b.scheduledAt);
+          return bDate.getTime() - aDate.getTime();
+        })
+        .slice(0, 10);
+
+      res.json({
+        userGrowth,
+        sessionStats,
+        subjectStats,
+        overview: {
+          totalStudents: users.filter(u => u.role === 'student').length,
+          totalTutors: users.filter(u => u.role === 'tutor').length,
+          verifiedTutors: tutorProfiles.filter(t => t.isVerified).length,
+          totalSessions: totalSessionsBooked,
+          completedSessions,
+          completionRate,
+          totalRevenue: Math.round(totalRevenue * 100) / 100,
+        },
+        recentActivity: recentSessions.map(s => ({
+          id: s.id,
+          status: s.status,
+          scheduledAt: s.scheduledAt?.toDate ? s.scheduledAt.toDate().toISOString() : s.scheduledAt,
+        })),
+      });
+    } catch (error) {
+      console.error("Error fetching admin analytics:", error);
+      res.status(500).json({ message: "Failed to fetch analytics", fieldErrors: {} });
+    }
+  });
+
   app.get("/api/admin/students", requireUser, requireAdmin, async (_req, res) => {
     try {
       const snap = await fdb!.collection("users").where("role", "==", "student").get();
