@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { SessionCard } from "@/components/SessionCard";
 import { ChatWindow } from "@/components/ChatWindow";
 import StudyBuddyPanel from "@/components/study-buddy/StudyBuddyPanel";
-import { MemoryMatchGame } from "@/components/MemoryMatchGame";
+import PreSessionMemoryGame from "@/components/PreSessionMemoryGame";
 
 import { Calendar, Clock, CheckCircle, XCircle, AlertCircle, MessageCircle } from "lucide-react";
 import { format } from "date-fns";
@@ -84,7 +84,6 @@ export default function StudentDashboard() {
   const [showChat, setShowChat] = useState(false);
   const [chatUserId, setChatUserId] = useState<string | null>(null);
   const [showStudyBuddy, setShowStudyBuddy] = useState(false);
-  const [showMemoryGame, setShowMemoryGame] = useState(false);
 
   // Redirect if not logged in
   useEffect(() => {
@@ -98,17 +97,14 @@ export default function StudentDashboard() {
     }
   }, [user, isLoading, toast, navigate]);
 
-  // Listen for menu events to open Study Buddy and Memory Game
+  // Listen for menu event to open Study Buddy
   useEffect(() => {
     const handleOpenStudyBuddy = () => setShowStudyBuddy(true);
-    const handleOpenMemoryGame = () => setShowMemoryGame(true);
 
     window.addEventListener("open-study-buddy", handleOpenStudyBuddy);
-    window.addEventListener("open-memory-game", handleOpenMemoryGame);
 
     return () => {
       window.removeEventListener("open-study-buddy", handleOpenStudyBuddy);
-      window.removeEventListener("open-memory-game", handleOpenMemoryGame);
     };
   }, []);
 
@@ -610,11 +606,8 @@ export default function StudentDashboard() {
         onClose={() => setShowStudyBuddy(false)}
       />
 
-      {/* Memory Match Game */}
-      <MemoryMatchGame
-        isOpen={showMemoryGame}
-        onClose={() => setShowMemoryGame(false)}
-      />
+      {/* Memory Match Game - has its own floating button */}
+      <PreSessionMemoryGame />
     </div>
   );
 }
