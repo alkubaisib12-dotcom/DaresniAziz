@@ -384,11 +384,19 @@ export default function AdminDashboard() {
         method: "POST",
       });
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/notifications"] });
       toast({
         title: "Success",
-        description: "All notifications marked as read",
+        description: `Marked ${data.count} notification${data.count !== 1 ? 's' : ''} as read`,
+      });
+    },
+    onError: (error: any) => {
+      console.error("Error marking notifications as read:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to mark notifications as read",
+        variant: "destructive",
       });
     },
   });
@@ -787,8 +795,7 @@ export default function AdminDashboard() {
               ) : pendingCount === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <CheckCircle className="h-16 w-16 mx-auto mb-4 text-green-500" />
-                  <p className="text-lg font-medium">All caught up!</p>
-                  <p className="text-sm">No pending tutor applications to review.</p>
+                  <p className="text-lg font-medium">No pending tutor</p>
                 </div>
               ) : (
                 <div className="space-y-6">

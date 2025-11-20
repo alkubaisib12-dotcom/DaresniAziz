@@ -1391,9 +1391,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/pending-tutors", requireUser, requireAdmin, async (_req, res) => {
     try {
       const profs = await listCollection<any>("tutor_profiles", [["isVerified", "==", false]]);
+
+      if (profs.length === 0) {
+        return res.json([]);
+      }
+
       const userIds = profs.map((p) => p.userId).filter(Boolean);
-      const usersMap = await batchLoadMap<any>("users", userIds);
-      const results = profs.map((p) => ({ profile: p, user: usersMap.get(p.userId) || null }));
+      const tutorIds = profs.map((p) => p.id);
+
+      // Load users and tutor_subjects
+      const [usersMap, tsDocs] = await Promise.all([
+        batchLoadMap<any>("users", userIds),
+        (async () => {
+          // fetch tutor_subjects in chunks of 10 for 'in' constraint
+          const chunks: string[][] = [];
+          for (let i = 0; i < tutorIds.length; i += 10) {
+            chunks.push(tutorIds.slice(i, i + 10));
+          }
+          const acc: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+          for (const chunk of chunks) {
+            const snap = await fdb!
+              .collection("tutor_subjects")
+              .where("tutorId", "in", chunk)
+              .get();
+            acc.push(...snap.docs);
+          }
+          return acc;
+        })(),
+      ]);
+
+      // Build tutorId -> subjectIds map
+      const tutorSubjectIds = new Map<string, string[]>();
+      for (const doc of tsDocs) {
+        const tid = doc.get("tutorId");
+        const sid = doc.get("subjectId");
+        if (!tutorSubjectIds.has(tid)) tutorSubjectIds.set(tid, []);
+        tutorSubjectIds.get(tid)!.push(sid);
+      }
+
+      // Batch load all subjects
+      const allSubjectIds = Array.from(new Set(tsDocs.map((d) => d.get("subjectId"))));
+      const subjectsMap = await batchLoadMap<any>("subjects", allSubjectIds);
+
+      // Enrich profiles with user and subjects
+      const results = profs.map((p) => {
+        const subjectIds = tutorSubjectIds.get(p.id) || [];
+        const subjects = subjectIds
+          .map((sid) => (subjectsMap.get(sid) ? { id: sid, ...subjectsMap.get(sid)! } : null))
+          .filter(Boolean);
+
+        return {
+          profile: p,
+          user: usersMap.get(p.userId) || null,
+          subjects,
+        };
+      });
+
       res.json(results);
     } catch (error) {
       console.error("Error fetching pending tutors:", error);
