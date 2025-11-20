@@ -8,7 +8,7 @@
  * 4. Coordinates with other services (quiz, revision, etc.)
  */
 import type { StudyBuddyProgress } from "../../../shared/studyBuddyTypes";
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import {
   ChatRequest,
   StudyBuddyMessage,
@@ -31,8 +31,8 @@ import {
 } from "./tutorUpsell";
 import { Response } from "express";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || "",
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY || "",
 });
 
 /**
@@ -118,36 +118,28 @@ export async function handleChatMessage(
     // Build system prompt
     const systemPrompt = buildSystemPrompt(contextText);
 
-    // Build messages for Claude
-    const messages = buildMessagesForClaude(history, message);
+    // Build messages for OpenAI
+    const messages = buildMessagesForOpenAI(history, message, systemPrompt);
 
-    // Stream response from Claude
+    // Stream response from OpenAI
     let fullResponse = "";
 
-    const stream = await anthropic.messages.stream({
-      model: "claude-3-5-sonnet-20241022",
+    const stream = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
       max_tokens: 4000,
       temperature: 0.7,
-      system: systemPrompt,
       messages,
+      stream: true,
     });
 
     // Handle stream events
-    stream.on("text", (text) => {
-      fullResponse += text;
-      sendStreamEvent(res, { type: "token", content: text });
-    });
-
-    stream.on("error", (error) => {
-      console.error("Stream error:", error);
-      sendStreamEvent(res, {
-        type: "error",
-        error: "An error occurred while generating response",
-      });
-      res.end();
-    });
-
-    await stream.done();
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || "";
+      if (content) {
+        fullResponse += content;
+        sendStreamEvent(res, { type: "token", content });
+      }
+    }
 
     // Save assistant message
     const assistantMessageId = await saveMessage(
@@ -251,13 +243,20 @@ Remember: Your goal is to help students LEARN, not just get answers. Always prio
 }
 
 /**
- * Build messages array for Claude API
+ * Build messages array for OpenAI API
  */
-function buildMessagesForClaude(
+function buildMessagesForOpenAI(
   history: StudyBuddyMessage[],
-  currentMessage: string
-): Anthropic.MessageParam[] {
-  const messages: Anthropic.MessageParam[] = [];
+  currentMessage: string,
+  systemPrompt: string
+): OpenAI.Chat.ChatCompletionMessageParam[] {
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+
+  // Add system prompt as first message
+  messages.push({
+    role: "system",
+    content: systemPrompt,
+  });
 
   // Add conversation history (limit to recent messages to stay within context)
   history.slice(-10).forEach((msg) => {
