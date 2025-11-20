@@ -1217,6 +1217,164 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get student details with sessions
+  app.get("/api/admin/students/:userId/details", requireUser, requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      // Get student user data
+      const studentDoc = await fdb!.collection("users").doc(userId).get();
+      if (!studentDoc.exists) {
+        return res.status(404).json({ message: "Student not found", fieldErrors: {} });
+      }
+
+      const student = { id: studentDoc.id, ...studentDoc.data() };
+
+      // Get student's sessions
+      const sessionsSnap = await fdb!.collection("tutoring_sessions")
+        .where("studentId", "==", userId)
+        .orderBy("scheduledAt", "desc")
+        .limit(50)
+        .get();
+
+      const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Get unique tutor and subject IDs
+      const tutorIds = new Set<string>();
+      const subjectIds = new Set<string>();
+      sessions.forEach((s: any) => {
+        if (s.tutorId) tutorIds.add(s.tutorId);
+        if (s.subjectId) subjectIds.add(s.subjectId);
+      });
+
+      // Batch load tutors and subjects
+      const tutorsMap = await batchLoadMap<any>("tutor_profiles", Array.from(tutorIds));
+      const subjectsMap = await batchLoadMap<any>("subjects", Array.from(subjectIds));
+
+      // Get tutor user data
+      const tutorUserIds = Array.from(tutorsMap.values()).map((t: any) => t.userId).filter(Boolean);
+      const tutorUsersMap = await batchLoadMap<any>("users", tutorUserIds);
+
+      // Enrich sessions with tutor and subject data
+      const enrichedSessions = sessions.map((s: any) => {
+        const tutorProfile = s.tutorId ? tutorsMap.get(s.tutorId) : null;
+        const tutorUser = tutorProfile?.userId ? tutorUsersMap.get(tutorProfile.userId) : null;
+
+        return {
+          ...s,
+          tutor: tutorProfile ? {
+            ...tutorProfile,
+            user: tutorUser,
+          } : null,
+          subject: s.subjectId ? subjectsMap.get(s.subjectId) : null,
+        };
+      });
+
+      res.json({
+        student,
+        sessions: enrichedSessions,
+        stats: {
+          totalSessions: sessions.length,
+          completedSessions: sessions.filter((s: any) => s.status === 'completed').length,
+          upcomingSessions: sessions.filter((s: any) => s.status === 'scheduled').length,
+          cancelledSessions: sessions.filter((s: any) => s.status === 'cancelled').length,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching student details:", error);
+      res.status(500).json({ message: "Failed to fetch student details", fieldErrors: {} });
+    }
+  });
+
+  // Get tutor sessions
+  app.get("/api/admin/tutors/:userId/sessions", requireUser, requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      // Get tutor profile
+      const tutorProfileSnap = await fdb!.collection("tutor_profiles")
+        .where("userId", "==", userId)
+        .limit(1)
+        .get();
+
+      if (tutorProfileSnap.empty) {
+        return res.status(404).json({ message: "Tutor profile not found", fieldErrors: {} });
+      }
+
+      const tutorProfile = tutorProfileSnap.docs[0];
+
+      // Get tutor's sessions
+      const sessionsSnap = await fdb!.collection("tutoring_sessions")
+        .where("tutorId", "==", tutorProfile.id)
+        .orderBy("scheduledAt", "desc")
+        .limit(50)
+        .get();
+
+      const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Get unique student and subject IDs
+      const studentIds = new Set<string>();
+      const subjectIds = new Set<string>();
+      sessions.forEach((s: any) => {
+        if (s.studentId) studentIds.add(s.studentId);
+        if (s.subjectId) subjectIds.add(s.subjectId);
+      });
+
+      // Batch load students and subjects
+      const studentsMap = await batchLoadMap<any>("users", Array.from(studentIds));
+      const subjectsMap = await batchLoadMap<any>("subjects", Array.from(subjectIds));
+
+      // Enrich sessions
+      const enrichedSessions = sessions.map((s: any) => ({
+        ...s,
+        student: s.studentId ? studentsMap.get(s.studentId) : null,
+        subject: s.subjectId ? subjectsMap.get(s.subjectId) : null,
+      }));
+
+      res.json({
+        sessions: enrichedSessions,
+        stats: {
+          totalSessions: sessions.length,
+          completedSessions: sessions.filter((s: any) => s.status === 'completed').length,
+          upcomingSessions: sessions.filter((s: any) => s.status === 'scheduled').length,
+          cancelledSessions: sessions.filter((s: any) => s.status === 'cancelled').length,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching tutor sessions:", error);
+      res.status(500).json({ message: "Failed to fetch tutor sessions", fieldErrors: {} });
+    }
+  });
+
+  // Mark all notifications as read
+  app.post("/api/admin/notifications/mark-all-read", requireUser, requireAdmin, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+
+      // Get all unread notifications for this admin
+      const unreadSnap = await fdb!.collection("notifications")
+        .where("recipientId", "==", userId)
+        .where("isRead", "==", false)
+        .get();
+
+      // Batch update all to read
+      const batch = fdb!.batch();
+      unreadSnap.docs.forEach(doc => {
+        batch.update(doc.ref, { isRead: true, readAt: now() });
+      });
+
+      await batch.commit();
+
+      res.json({
+        message: "All notifications marked as read",
+        count: unreadSnap.size,
+      });
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+      res.status(500).json({ message: "Failed to mark notifications as read", fieldErrors: {} });
+    }
+  });
+
   app.get("/api/admin/tutors", requireUser, requireAdmin, async (_req, res) => {
     try {
       const profs = await listCollection<any>("tutor_profiles");

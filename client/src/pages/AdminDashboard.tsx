@@ -100,6 +100,27 @@ interface AdminUser {
   createdAt: string;
 }
 
+interface StudentDetails {
+  student: Student;
+  sessions: any[];
+  stats: {
+    totalSessions: number;
+    completedSessions: number;
+    upcomingSessions: number;
+    cancelledSessions: number;
+  };
+}
+
+interface TutorSessions {
+  sessions: any[];
+  stats: {
+    totalSessions: number;
+    completedSessions: number;
+    upcomingSessions: number;
+    cancelledSessions: number;
+  };
+}
+
 interface AnalyticsData {
   userGrowth: Array<{ date: string; students: number; tutors: number }>;
   sessionStats: {
@@ -142,6 +163,8 @@ export default function AdminDashboard() {
   );
   const [selectedTutor, setSelectedTutor] = useState<TutorProfile | null>(null);
   const [tutorToReject, setTutorToReject] = useState<TutorProfile | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [selectedTutorForSessions, setSelectedTutorForSessions] = useState<TutorProfile | null>(null);
 
   // Redirect away if not admin (runs after first render)
   useEffect(() => {
@@ -195,6 +218,20 @@ export default function AdminDashboard() {
   const { data: adminUsers = [], isLoading: adminsLoading } = useQuery<AdminUser[]>({
     queryKey: ["/api/admin/admins"],
     enabled: isAdmin && currentTab === "admins",
+  });
+
+  // Fetch student details with sessions
+  const { data: studentDetails, isLoading: studentDetailsLoading } = useQuery<StudentDetails>({
+    queryKey: ["/api/admin/students", selectedStudent?.id, "details"],
+    queryFn: () => apiRequest(`/api/admin/students/${selectedStudent?.id}/details`),
+    enabled: !!selectedStudent?.id,
+  });
+
+  // Fetch tutor sessions
+  const { data: tutorSessions, isLoading: tutorSessionsLoading } = useQuery<TutorSessions>({
+    queryKey: ["/api/admin/tutors", selectedTutorForSessions?.user?.id, "sessions"],
+    queryFn: () => apiRequest(`/api/admin/tutors/${selectedTutorForSessions?.user?.id}/sessions`),
+    enabled: !!selectedTutorForSessions?.user?.id,
   });
 
   // Mark notification as read
@@ -337,6 +374,22 @@ export default function AdminDashboard() {
         variant: "destructive",
       });
       setUserToDelete(null);
+    },
+  });
+
+  // Mark all notifications as read
+  const markAllAsReadMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("/api/admin/notifications/mark-all-read", {
+        method: "POST",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/notifications"] });
+      toast({
+        title: "Success",
+        description: "All notifications marked as read",
+      });
     },
   });
 
@@ -848,16 +901,29 @@ export default function AdminDashboard() {
                   System notifications and alerts requiring your attention.
                 </CardDescription>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => refetchNotifications()}
-                disabled={notificationsLoading}
-              >
-                <RefreshCw
-                  className={`h-4 w-4 ${notificationsLoading ? "animate-spin" : ""}`}
-                />
-              </Button>
+              <div className="flex gap-2">
+                {unreadCount > 0 && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => markAllAsReadMutation.mutate()}
+                    disabled={markAllAsReadMutation.isPending}
+                  >
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Mark All as Read
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetchNotifications()}
+                  disabled={notificationsLoading}
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${notificationsLoading ? "animate-spin" : ""}`}
+                  />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {notificationsLoading ? (
@@ -946,13 +1012,13 @@ export default function AdminDashboard() {
                   {students.map((student) => (
                     <div
                       key={student.id}
-                      className="p-4 border rounded-lg flex items-center justify-between"
+                      className="p-4 border rounded-lg flex items-center justify-between hover:bg-muted/50 transition-colors"
                     >
-                      <div className="flex items-center space-x-3">
+                      <div className="flex items-center space-x-3 flex-1">
                         <div className="h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center">
                           <User className="h-5 w-5" />
                         </div>
-                        <div>
+                        <div className="flex-1">
                           <h3 className="font-semibold">
                             {student.firstName} {student.lastName}
                           </h3>
@@ -965,19 +1031,29 @@ export default function AdminDashboard() {
                           </p>
                         </div>
                       </div>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() =>
-                          setUserToDelete({
-                            id: student.id,
-                            type: "student",
-                            name: `${student.firstName} ${student.lastName}`,
-                          })
-                        }
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedStudent(student)}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          View Details
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() =>
+                            setUserToDelete({
+                              id: student.id,
+                              type: "student",
+                              name: `${student.firstName} ${student.lastName}`,
+                            })
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1080,7 +1156,15 @@ export default function AdminDashboard() {
                           onClick={() => setSelectedTutor(tutor)}
                         >
                           <Eye className="h-4 w-4 mr-1" />
-                          View Details
+                          Profile
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedTutorForSessions(tutor)}
+                        >
+                          <Calendar className="h-4 w-4 mr-1" />
+                          Sessions
                         </Button>
                         {!tutor.profile.isVerified && (
                           <Button
@@ -1433,6 +1517,214 @@ export default function AdminDashboard() {
                 )}
               </div>
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Student Details Dialog */}
+      <Dialog open={!!selectedStudent} onOpenChange={() => setSelectedStudent(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Student Details & Sessions</DialogTitle>
+            <DialogDescription>
+              Complete information and session history for {selectedStudent?.firstName} {selectedStudent?.lastName}
+            </DialogDescription>
+          </DialogHeader>
+          {studentDetailsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#9B1B30]" />
+            </div>
+          ) : studentDetails ? (
+            <div className="space-y-6">
+              {/* Student Info */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Full Name</p>
+                  <p className="text-base font-semibold">
+                    {studentDetails.student.firstName} {studentDetails.student.lastName}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Email</p>
+                  <p className="text-base">{studentDetails.student.email}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Joined</p>
+                  <p className="text-base">
+                    {new Date(studentDetails.student.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Student ID</p>
+                  <p className="text-base font-mono text-xs">{studentDetails.student.id}</p>
+                </div>
+              </div>
+
+              {/* Stats Cards */}
+              <div className="grid grid-cols-4 gap-3">
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-blue-600">{studentDetails.stats.totalSessions}</p>
+                    <p className="text-xs text-muted-foreground">Total Sessions</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-green-600">{studentDetails.stats.completedSessions}</p>
+                    <p className="text-xs text-muted-foreground">Completed</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-orange-600">{studentDetails.stats.upcomingSessions}</p>
+                    <p className="text-xs text-muted-foreground">Upcoming</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-red-600">{studentDetails.stats.cancelledSessions}</p>
+                    <p className="text-xs text-muted-foreground">Cancelled</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Sessions List */}
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Session History</h3>
+                {studentDetails.sessions.length === 0 ? (
+                  <p className="text-center py-8 text-muted-foreground">No sessions found</p>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {studentDetails.sessions.map((session: any) => (
+                      <div key={session.id} className="p-3 border rounded-lg">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-medium">{session.subject?.name || "Unknown Subject"}</p>
+                              <Badge variant={
+                                session.status === 'completed' ? 'default' :
+                                session.status === 'scheduled' ? 'secondary' :
+                                session.status === 'cancelled' ? 'destructive' : 'outline'
+                              }>
+                                {session.status}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Tutor: {session.tutor?.user?.firstName} {session.tutor?.user?.lastName}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {session.scheduledAt && new Date(
+                                session.scheduledAt?.toDate ? session.scheduledAt.toDate() : session.scheduledAt
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold">
+                              {formatMoney(session.priceCents ? session.priceCents / 100 : (session.price || 0))}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{session.duration || 60} min</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-center py-8 text-muted-foreground">Failed to load student details</p>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Tutor Sessions Dialog */}
+      <Dialog open={!!selectedTutorForSessions} onOpenChange={() => setSelectedTutorForSessions(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Tutor Sessions</DialogTitle>
+            <DialogDescription>
+              Session history for {selectedTutorForSessions?.user?.firstName} {selectedTutorForSessions?.user?.lastName}
+            </DialogDescription>
+          </DialogHeader>
+          {tutorSessionsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#9B1B30]" />
+            </div>
+          ) : tutorSessions ? (
+            <div className="space-y-6">
+              {/* Stats Cards */}
+              <div className="grid grid-cols-4 gap-3">
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-blue-600">{tutorSessions.stats.totalSessions}</p>
+                    <p className="text-xs text-muted-foreground">Total Sessions</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-green-600">{tutorSessions.stats.completedSessions}</p>
+                    <p className="text-xs text-muted-foreground">Completed</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-orange-600">{tutorSessions.stats.upcomingSessions}</p>
+                    <p className="text-xs text-muted-foreground">Upcoming</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-red-600">{tutorSessions.stats.cancelledSessions}</p>
+                    <p className="text-xs text-muted-foreground">Cancelled</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Sessions List */}
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Session History</h3>
+                {tutorSessions.sessions.length === 0 ? (
+                  <p className="text-center py-8 text-muted-foreground">No sessions found</p>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {tutorSessions.sessions.map((session: any) => (
+                      <div key={session.id} className="p-3 border rounded-lg">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-medium">{session.subject?.name || "Unknown Subject"}</p>
+                              <Badge variant={
+                                session.status === 'completed' ? 'default' :
+                                session.status === 'scheduled' ? 'secondary' :
+                                session.status === 'cancelled' ? 'destructive' : 'outline'
+                              }>
+                                {session.status}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Student: {session.student?.firstName} {session.student?.lastName}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {session.scheduledAt && new Date(
+                                session.scheduledAt?.toDate ? session.scheduledAt.toDate() : session.scheduledAt
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold">
+                              {formatMoney(session.priceCents ? session.priceCents / 100 : (session.price || 0))}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{session.duration || 60} min</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-center py-8 text-muted-foreground">Failed to load tutor sessions</p>
           )}
         </DialogContent>
       </Dialog>
