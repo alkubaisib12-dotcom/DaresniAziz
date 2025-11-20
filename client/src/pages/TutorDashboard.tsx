@@ -144,8 +144,9 @@ export default function TutorDashboard() {
     queryKey: ["/api/sessions"],
     enabled: !!user,
     retry: false,
-    refetchInterval: 10000,
+    refetchInterval: 60000, // Optimized: 60s instead of 10s
     refetchOnWindowFocus: true,
+    staleTime: 30000, // Cache for 30s
   });
 
   /** Tutor profile (no polling here; polling lives on PendingApproval page) */
@@ -156,7 +157,7 @@ export default function TutorDashboard() {
     refetchOnMount: "always",
     refetchOnReconnect: true,
     refetchOnWindowFocus: true,
-    staleTime: 0,
+    staleTime: 60000, // Optimized: 60s instead of 0
     select: (p: any) => (p ? { ...p, __approved: isTutorApproved(p) } : p),
   });
 

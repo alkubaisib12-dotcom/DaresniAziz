@@ -11,8 +11,8 @@ export function useNotifications() {
     queryKey: ["notifications", user?.id],
     enabled,
     queryFn: fetchNotifications,
-    refetchInterval: enabled ? 10000 : false, // 10s polling when signed-in
-    staleTime: 5000,
+    refetchInterval: enabled ? 30000 : false, // Optimized: 30s instead of 10s
+    staleTime: 20000, // Optimized: 20s instead of 5s
   });
 
   const unreadCount = data.filter((n) => !n.isRead).length;

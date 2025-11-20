@@ -49,7 +49,8 @@ export function ChatWindow({ userId, onClose }: ChatWindowProps) {
   } = useQuery<ChatMessage[]>({
     queryKey: ["/api/messages", userId],
     queryFn: () => apiRequest(`/api/messages/${userId}`),
-    refetchInterval: 5000,
+    refetchInterval: 15000, // Optimized: 15s instead of 5s for chat
+    staleTime: 10000, // Cache for 10s
   });
 
   // Fetch the "other" user for header

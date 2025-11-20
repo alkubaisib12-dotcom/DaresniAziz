@@ -95,18 +95,29 @@ async function getEnrolledSubjects(
       }
     });
 
-    // Fetch subject details
+    if (subjectIds.size === 0) return [];
+
+    // OPTIMIZED: Batch fetch all subjects at once using 'in' operator
+    // Firestore 'in' supports up to 10 values, so we batch if needed
     const subjects: StudentContext["enrolledSubjects"] = [];
-    for (const subjectId of subjectIds) {
-      const subjectDoc = await db.collection("subjects").doc(subjectId).get();
-      if (subjectDoc.exists) {
-        const subjectData = subjectDoc.data();
+    const subjectIdArray = Array.from(subjectIds);
+
+    // Process in batches of 10
+    for (let i = 0; i < subjectIdArray.length; i += 10) {
+      const batch = subjectIdArray.slice(i, i + 10);
+      const subjectsSnapshot = await db
+        .collection("subjects")
+        .where("__name__", "in", batch)
+        .get();
+
+      subjectsSnapshot.docs.forEach((doc) => {
+        const subjectData = doc.data();
         subjects.push({
-          subjectId,
+          subjectId: doc.id,
           subjectName: subjectData?.name || "Unknown Subject",
           description: subjectData?.description,
         });
-      }
+      });
     }
 
     return subjects;
@@ -133,23 +144,41 @@ async function getProgressBySubject(
     .where("userId", "==", userId)
     .get();
 
-  const progressBySubject: StudentContext["progressBySubject"] = [];
+  if (progressSnapshot.empty) return [];
 
-  for (const doc of progressSnapshot.docs) {
+  // OPTIMIZED: Collect all unique subject IDs first
+  const subjectIds = new Set<string>();
+  const progressData = progressSnapshot.docs.map((doc) => {
     const progress = doc.data();
-    const masteryScore = calculateMasteryScore(progress as any);
-
-    // Fetch subject name
-    let subjectName = "Unknown Subject";
     if (progress.subjectId) {
-      const subjectDoc = await db
-        .collection("subjects")
-        .doc(progress.subjectId)
-        .get();
-      if (subjectDoc.exists) {
-        subjectName = subjectDoc.data()?.name || subjectName;
-      }
+      subjectIds.add(progress.subjectId);
     }
+    return progress;
+  });
+
+  // OPTIMIZED: Batch fetch all subjects at once
+  const subjectMap = new Map<string, string>();
+  const subjectIdArray = Array.from(subjectIds);
+
+  for (let i = 0; i < subjectIdArray.length; i += 10) {
+    const batch = subjectIdArray.slice(i, i + 10);
+    const subjectsSnapshot = await db
+      .collection("subjects")
+      .where("__name__", "in", batch)
+      .get();
+
+    subjectsSnapshot.docs.forEach((doc) => {
+      subjectMap.set(doc.id, doc.data()?.name || "Unknown Subject");
+    });
+  }
+
+  // Build progress array with cached subject names
+  const progressBySubject: StudentContext["progressBySubject"] = [];
+  for (const progress of progressData) {
+    const masteryScore = calculateMasteryScore(progress as any);
+    const subjectName = progress.subjectId
+      ? subjectMap.get(progress.subjectId) || "Unknown Subject"
+      : "Unknown Subject";
 
     progressBySubject.push({
       subjectId: progress.subjectId,
@@ -183,35 +212,60 @@ async function getRecentSessions(
       .limit(limit)
       .get();
 
-    const sessions: NonNullable<StudentContext["recentSessions"]> = [];
+    if (sessionsSnapshot.empty) return [];
 
-    for (const doc of sessionsSnapshot.docs) {
+    // OPTIMIZED: Collect all unique subject IDs and tutor IDs
+    const subjectIds = new Set<string>();
+    const tutorIds = new Set<string>();
+    const sessionData = sessionsSnapshot.docs.map((doc) => {
       const session = doc.data();
+      if (session.subjectId) subjectIds.add(session.subjectId);
+      if (session.tutorId) tutorIds.add(session.tutorId);
+      return { id: doc.id, ...session };
+    });
 
-      // Fetch subject name
-      let subjectName = "Unknown Subject";
-      if (session.subjectId) {
-        const subjectDoc = await db
-          .collection("subjects")
-          .doc(session.subjectId)
-          .get();
-        if (subjectDoc.exists) {
-          subjectName = subjectDoc.data()?.name || subjectName;
-        }
-      }
+    // OPTIMIZED: Batch fetch all subjects
+    const subjectMap = new Map<string, string>();
+    const subjectIdArray = Array.from(subjectIds);
+    for (let i = 0; i < subjectIdArray.length; i += 10) {
+      const batch = subjectIdArray.slice(i, i + 10);
+      const subjectsSnapshot = await db
+        .collection("subjects")
+        .where("__name__", "in", batch)
+        .get();
+      subjectsSnapshot.docs.forEach((doc) => {
+        subjectMap.set(doc.id, doc.data()?.name || "Unknown Subject");
+      });
+    }
 
-      // Fetch tutor name
-      let tutorName = "Unknown Tutor";
-      if (session.tutorId) {
-        const tutorDoc = await db.collection("users").doc(session.tutorId).get();
-        if (tutorDoc.exists) {
-          const tutorData = tutorDoc.data();
-          tutorName = `${tutorData?.firstName || ""} ${tutorData?.lastName || ""}`.trim();
-        }
-      }
+    // OPTIMIZED: Batch fetch all tutors
+    const tutorMap = new Map<string, string>();
+    const tutorIdArray = Array.from(tutorIds);
+    for (let i = 0; i < tutorIdArray.length; i += 10) {
+      const batch = tutorIdArray.slice(i, i + 10);
+      const tutorsSnapshot = await db
+        .collection("users")
+        .where("__name__", "in", batch)
+        .get();
+      tutorsSnapshot.docs.forEach((doc) => {
+        const tutorData = doc.data();
+        const name = `${tutorData?.firstName || ""} ${tutorData?.lastName || ""}`.trim();
+        tutorMap.set(doc.id, name || "Unknown Tutor");
+      });
+    }
+
+    // Build sessions array with cached data
+    const sessions: NonNullable<StudentContext["recentSessions"]> = [];
+    for (const session of sessionData) {
+      const subjectName = session.subjectId
+        ? subjectMap.get(session.subjectId) || "Unknown Subject"
+        : "Unknown Subject";
+      const tutorName = session.tutorId
+        ? tutorMap.get(session.tutorId) || "Unknown Tutor"
+        : "Unknown Tutor";
 
       sessions.push({
-        sessionId: doc.id,
+        sessionId: session.id,
         subjectName,
         tutorName,
         date: session.scheduledAt?.toDate?.()?.toISOString() || "",
@@ -247,21 +301,36 @@ async function getRecentQuizzes(
     .limit(limit)
     .get();
 
-  const quizzes: NonNullable<StudentContext["recentQuizzes"]> = [];
+  if (attemptsSnapshot.empty) return [];
 
-  for (const doc of attemptsSnapshot.docs) {
+  // OPTIMIZED: Collect all unique quiz IDs
+  const quizIds = new Set<string>();
+  const attemptData = attemptsSnapshot.docs.map((doc) => {
     const attempt = doc.data();
+    if (attempt.quizId) quizIds.add(attempt.quizId);
+    return attempt;
+  });
 
-    // Fetch quiz details
+  // OPTIMIZED: Batch fetch all quizzes
+  const quizMap = new Map<string, any>();
+  const quizIdArray = Array.from(quizIds);
+  for (let i = 0; i < quizIdArray.length; i += 10) {
+    const batch = quizIdArray.slice(i, i + 10);
+    const quizzesSnapshot = await db
+      .collection("study_buddy_quizzes")
+      .where("__name__", "in", batch)
+      .get();
+    quizzesSnapshot.docs.forEach((doc) => {
+      quizMap.set(doc.id, doc.data());
+    });
+  }
+
+  // Build quizzes array with cached data
+  const quizzes: NonNullable<StudentContext["recentQuizzes"]> = [];
+  for (const attempt of attemptData) {
     if (attempt.quizId) {
-      const quizDoc = await db
-        .collection("study_buddy_quizzes")
-        .doc(attempt.quizId)
-        .get();
-
-      if (quizDoc.exists) {
-        const quiz = quizDoc.data();
-
+      const quiz = quizMap.get(attempt.quizId);
+      if (quiz) {
         quizzes.push({
           quizId: attempt.quizId,
           topic: quiz?.topic || "Unknown Topic",
@@ -347,10 +416,12 @@ async function calculateTotalStudyTime(userId: string): Promise<number> {
   let totalMinutes = 0;
 
   try {
-    // Count time from quiz attempts
+    // OPTIMIZED: Count time from recent quiz attempts (limit to last 100)
     const quizAttemptsSnapshot = await db
       .collection("study_buddy_quiz_attempts")
       .where("userId", "==", userId)
+      .orderBy("startedAt", "desc")
+      .limit(100)
       .get();
 
     quizAttemptsSnapshot.docs.forEach((doc) => {
@@ -368,11 +439,13 @@ async function calculateTotalStudyTime(userId: string): Promise<number> {
   }
 
   try {
-    // Count time from completed sessions
+    // OPTIMIZED: Count time from completed sessions (limit to last 100)
     const sessionsSnapshot = await db
       .collection("tutoring_sessions")
       .where("studentId", "==", userId)
       .where("status", "==", "completed")
+      .orderBy("scheduledAt", "desc")
+      .limit(100)
       .get();
 
     sessionsSnapshot.docs.forEach((doc) => {
@@ -391,11 +464,13 @@ async function calculateTotalStudyTime(userId: string): Promise<number> {
   }
 
   try {
-    // Estimate time from conversation messages (rough estimate)
+    // OPTIMIZED: Estimate time from recent conversation messages (limit to last 200)
     const messagesSnapshot = await db
       .collection("study_buddy_messages")
       .where("userId", "==", userId)
       .where("role", "==", "user")
+      .orderBy("timestamp", "desc")
+      .limit(200)
       .get();
 
     // Assume ~2 minutes per user message (reading + thinking + typing)

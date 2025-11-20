@@ -75,8 +75,8 @@ export default function Navbar() {
       const json = await res.json();
       return Number(json?.unread ?? 0);
     },
-    refetchInterval: 15_000,
-    staleTime: 10_000,
+    refetchInterval: 30_000, // Optimized: 30s instead of 15s
+    staleTime: 20_000, // Optimized: 20s instead of 10s
   });
 
   const handleLogout = async () => {
