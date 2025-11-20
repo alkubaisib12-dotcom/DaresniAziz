@@ -69,19 +69,24 @@ export default function StudyBuddyPanel({ isOpen, onClose }: StudyBuddyPanelProp
   const handleQuickAction = async (action: string, params?: any) => {
     setShowQuickActions(false);
 
+    let message = "";
     switch (action) {
       case "quiz":
-        setInputValue("Generate a quiz for me based on my recent progress");
+        message = "Generate a quiz for me";
         break;
       case "summary":
-        setInputValue("Can you help me summarize my notes?");
+        message = "Help me summarize my notes";
         break;
       case "revision":
-        setInputValue("Create a revision plan for my upcoming exam");
+        message = "Create a revision plan";
         break;
       case "progress":
-        setInputValue("Show me my learning progress");
+        message = "Show my progress";
         break;
+    }
+
+    if (message) {
+      await sendMessage(message);
     }
   };
 

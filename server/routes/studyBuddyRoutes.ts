@@ -29,12 +29,10 @@ import {
   RecentActivity,
 } from "../../shared/studyBuddyTypes";
 import { Timestamp } from "firebase-admin/firestore";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const router = Router();
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || "",
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 // ============================================================================
 // CHAT ENDPOINTS
@@ -264,16 +262,9 @@ router.post("/quiz/:quizId/submit", requireUser, async (req, res) => {
     // Build response with feedback
     const feedbackPrompt = `Generate encouraging, personalized feedback for a student who scored ${gradeResult.score}% on a ${quiz.difficulty} ${quiz.topic} quiz. Keep it to 2-3 sentences.`;
 
-    const feedbackResponse = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 200,
-      messages: [{ role: "user", content: feedbackPrompt }],
-    });
-
-    const feedback =
-      feedbackResponse.content[0].type === "text"
-        ? feedbackResponse.content[0].text
-        : "Great effort! Keep practicing to improve.";
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const feedbackResponse = await model.generateContent(feedbackPrompt);
+    const feedback = feedbackResponse.response.text() || "Great effort! Keep practicing to improve.";
 
     res.json({
       attemptId,
@@ -320,14 +311,9 @@ Provide:
 1. A concise summary
 2. Key points as bullet points`;
 
-    const response = await anthropic.messages.create({
-      model: "claude-3-5-sonnet-20241022",
-      max_tokens: 2000,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const summaryText =
-      response.content[0].type === "text" ? response.content[0].text : "";
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const response = await model.generateContent(prompt);
+    const summaryText = response.response.text() || "";
 
     // Extract key points (simple heuristic)
     const keyPoints: string[] = [];
