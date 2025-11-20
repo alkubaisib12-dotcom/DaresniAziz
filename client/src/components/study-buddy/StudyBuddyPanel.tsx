@@ -13,7 +13,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
-import { MessageCircle, X, Send, Menu, Sparkles } from "lucide-react";
+import { MessageCircle, X, Send, Menu, Sparkles, Plus } from "lucide-react";
 import ChatMessage from "./ChatMessage";
 import ChatInput from "./ChatInput";
 import QuickActions from "./QuickActions";
@@ -36,6 +36,7 @@ export default function StudyBuddyPanel({ isOpen, onClose }: StudyBuddyPanelProp
     sendMessage,
     tutorSuggestion,
     dismissTutorSuggestion,
+    newConversation,
   } = useStudyBuddy();
 
   const [inputValue, setInputValue] = useState("");
@@ -116,6 +117,14 @@ export default function StudyBuddyPanel({ isOpen, onClose }: StudyBuddyPanelProp
               title="Quick Actions"
             >
               <Menu className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={newConversation}
+              title="New Chat"
+            >
+              <Plus className="w-4 h-4" />
             </Button>
             <Button variant="ghost" size="icon" onClick={onClose}>
               <X className="w-4 h-4" />
