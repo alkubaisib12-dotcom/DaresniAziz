@@ -280,52 +280,64 @@ async function getRecentQuizzes(
  * Calculate study streak (consecutive days with activity)
  */
 async function calculateStudyStreak(userId: string): Promise<number> {
-  // Get all study buddy activities sorted by date
-  const messagesSnapshot = await db
-    .collection("study_buddy_messages")
-    .where("userId", "==", userId)
-    .orderBy("timestamp", "desc")
-    .limit(100)
-    .get();
+  try {
+    // Get all study buddy activities sorted by date
+    const messagesSnapshot = await db
+      .collection("study_buddy_messages")
+      .where("userId", "==", userId)
+      .orderBy("timestamp", "desc")
+      .limit(100)
+      .get();
 
-  if (messagesSnapshot.empty) return 0;
+    if (messagesSnapshot.empty) return 0;
 
-  // Extract unique dates
-  const activityDates = new Set<string>();
-  messagesSnapshot.docs.forEach((doc) => {
-    const data = doc.data();
-    if (data.timestamp) {
-      const date = data.timestamp.toDate();
-      const dateString = date.toISOString().split("T")[0]; // YYYY-MM-DD
-      activityDates.add(dateString);
-    }
-  });
-
-  // Count consecutive days from today
-  const today = new Date();
-  let streak = 0;
-  let checkDate = new Date(today);
-
-  while (true) {
-    const dateString = checkDate.toISOString().split("T")[0];
-
-    if (activityDates.has(dateString)) {
-      streak++;
-      checkDate.setDate(checkDate.getDate() - 1); // Go back one day
-    } else {
-      // Allow one day gap (streak continues if yesterday had activity)
-      if (streak === 0 && checkDate.toDateString() === today.toDateString()) {
-        checkDate.setDate(checkDate.getDate() - 1);
-        continue;
+    // Extract unique dates
+    const activityDates = new Set<string>();
+    messagesSnapshot.docs.forEach((doc) => {
+      const data = doc.data();
+      if (data.timestamp) {
+        const date = data.timestamp.toDate();
+        const dateString = date.toISOString().split("T")[0]; // YYYY-MM-DD
+        activityDates.add(dateString);
       }
-      break;
+    });
+
+    // Count consecutive days from today
+    const today = new Date();
+    let streak = 0;
+    let checkDate = new Date(today);
+
+    while (true) {
+      const dateString = checkDate.toISOString().split("T")[0];
+
+      if (activityDates.has(dateString)) {
+        streak++;
+        checkDate.setDate(checkDate.getDate() - 1); // Go back one day
+      } else {
+        // Allow one day gap (streak continues if yesterday had activity)
+        if (streak === 0 && checkDate.toDateString() === today.toDateString()) {
+          checkDate.setDate(checkDate.getDate() - 1);
+          continue;
+        }
+        break;
+      }
+
+      // Safety limit
+      if (streak > 365) break;
     }
 
-    // Safety limit
-    if (streak > 365) break;
+    return streak;
+  } catch (error: any) {
+    // Handle missing index error gracefully
+    if (error?.code === 9) {
+      console.warn(
+        "Firebase index missing for study_buddy_messages query (calculateStudyStreak). Returning 0."
+      );
+      return 0;
+    }
+    console.warn("Error calculating study streak:", error);
+    return 0;
   }
-
-  return streak;
 }
 
 /**
