@@ -15,9 +15,10 @@ import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/hooks/use-toast";
 import { SessionCard } from "@/components/SessionCard";
 import { ChatWindow } from "@/components/ChatWindow";
-import { StudyBuddyFAB } from "@/components/study-buddy/StudyBuddyPanel";
+import StudyBuddyPanel from "@/components/study-buddy/StudyBuddyPanel";
+import { MemoryMatchGame } from "@/components/MemoryMatchGame";
 
-import { Calendar, Clock, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { Calendar, Clock, CheckCircle, XCircle, AlertCircle, MessageCircle } from "lucide-react";
 import { format } from "date-fns";
 
 /* ------------------------------------------------------------ */
@@ -82,6 +83,8 @@ export default function StudentDashboard() {
   const [activeTab, setActiveTab] = useState<string>("upcoming");
   const [showChat, setShowChat] = useState(false);
   const [chatUserId, setChatUserId] = useState<string | null>(null);
+  const [showStudyBuddy, setShowStudyBuddy] = useState(false);
+  const [showMemoryGame, setShowMemoryGame] = useState(false);
 
   // Redirect if not logged in
   useEffect(() => {
@@ -94,6 +97,20 @@ export default function StudentDashboard() {
       navigate("/", { replace: true });
     }
   }, [user, isLoading, toast, navigate]);
+
+  // Listen for menu events to open Study Buddy and Memory Game
+  useEffect(() => {
+    const handleOpenStudyBuddy = () => setShowStudyBuddy(true);
+    const handleOpenMemoryGame = () => setShowMemoryGame(true);
+
+    window.addEventListener("open-study-buddy", handleOpenStudyBuddy);
+    window.addEventListener("open-memory-game", handleOpenMemoryGame);
+
+    return () => {
+      window.removeEventListener("open-study-buddy", handleOpenStudyBuddy);
+      window.removeEventListener("open-memory-game", handleOpenMemoryGame);
+    };
+  }, []);
 
   /* ---------------------- Sessions (via /api/sessions) ---------------------- */
 
@@ -575,8 +592,29 @@ export default function StudentDashboard() {
         <ChatWindow userId={chatUserId} onClose={() => setShowChat(false)} />
       )}
 
+      {/* Floating Action Button for AI Study Buddy */}
+      {!showStudyBuddy && (
+        <Button
+          onClick={() => setShowStudyBuddy(true)}
+          className="fixed bottom-4 left-4 h-14 w-14 rounded-full shadow-lg bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 z-40"
+          size="icon"
+          title="AI Study Buddy"
+        >
+          <MessageCircle className="h-6 w-6" />
+        </Button>
+      )}
+
       {/* AI Study Buddy */}
-      <StudyBuddyFAB />
+      <StudyBuddyPanel
+        isOpen={showStudyBuddy}
+        onClose={() => setShowStudyBuddy(false)}
+      />
+
+      {/* Memory Match Game */}
+      <MemoryMatchGame
+        isOpen={showMemoryGame}
+        onClose={() => setShowMemoryGame(false)}
+      />
     </div>
   );
 }
