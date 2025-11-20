@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -7,12 +7,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Loader2, Upload, User } from "lucide-react";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { Loader2, Upload, User, Clock, AlertCircle } from "lucide-react";
 
 const profileSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -28,6 +29,27 @@ export default function ProfileSettings() {
   const queryClient = useQueryClient();
   const [isUploading, setIsUploading] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(user?.profileImageUrl || null);
+
+  // Check if user can change name (7-day limit)
+  const canChangeName = useMemo(() => {
+    if (!user?.lastNameChangeAt) return true;
+
+    const lastChange = new Date(user.lastNameChangeAt);
+    const now = new Date();
+    const daysSinceLastChange = (now.getTime() - lastChange.getTime()) / (1000 * 60 * 60 * 24);
+
+    return daysSinceLastChange >= 7;
+  }, [user?.lastNameChangeAt]);
+
+  const daysUntilCanChange = useMemo(() => {
+    if (!user?.lastNameChangeAt || canChangeName) return 0;
+
+    const lastChange = new Date(user.lastNameChangeAt);
+    const now = new Date();
+    const daysSinceLastChange = (now.getTime() - lastChange.getTime()) / (1000 * 60 * 60 * 24);
+
+    return Math.ceil(7 - daysSinceLastChange);
+  }, [user?.lastNameChangeAt, canChangeName]);
 
   const form = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -128,6 +150,18 @@ export default function ProfileSettings() {
   };
 
   const onSubmit = (data: ProfileFormData) => {
+    // Check if name is being changed
+    const nameChanged = data.firstName !== user?.firstName || data.lastName !== user?.lastName;
+
+    if (nameChanged && !canChangeName) {
+      toast({
+        title: "Cannot change name",
+        description: `You can only change your name once every 7 days. Please wait ${daysUntilCanChange} more day(s).`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     updateProfileMutation.mutate(data);
   };
 
@@ -204,6 +238,20 @@ export default function ProfileSettings() {
                   </div>
                 </div>
 
+                {/* Name Change Restriction Warning */}
+                {!canChangeName && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription className="flex items-center gap-2">
+                      <Clock className="h-4 w-4" />
+                      <span>
+                        You can change your name again in {daysUntilCanChange} day(s).
+                        Names can only be changed once every 7 days.
+                      </span>
+                    </AlertDescription>
+                  </Alert>
+                )}
+
                 {/* Name Fields */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
@@ -216,9 +264,15 @@ export default function ProfileSettings() {
                           <Input
                             placeholder="Enter your first name"
                             {...field}
+                            disabled={!canChangeName}
                             data-testid="input-first-name"
                           />
                         </FormControl>
+                        {!canChangeName && (
+                          <FormDescription className="text-xs text-muted-foreground">
+                            Name changes are limited to once per 7 days
+                          </FormDescription>
+                        )}
                         <FormMessage />
                       </FormItem>
                     )}
@@ -234,9 +288,15 @@ export default function ProfileSettings() {
                           <Input
                             placeholder="Enter your last name"
                             {...field}
+                            disabled={!canChangeName}
                             data-testid="input-last-name"
                           />
                         </FormControl>
+                        {!canChangeName && (
+                          <FormDescription className="text-xs text-muted-foreground">
+                            Name changes are limited to once per 7 days
+                          </FormDescription>
+                        )}
                         <FormMessage />
                       </FormItem>
                     )}

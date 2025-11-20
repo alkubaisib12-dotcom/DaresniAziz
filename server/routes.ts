@@ -494,8 +494,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updateData = updateSchema.parse(req.body);
       if (updateData.profileImageUrl === "") delete (updateData as any).profileImageUrl;
 
+      // Check if name is being changed
+      const nameChanged =
+        (updateData.firstName && updateData.firstName !== user.firstName) ||
+        (updateData.lastName && updateData.lastName !== user.lastName);
+
       const ref = fdb!.collection("users").doc(user.id);
-      await ref.set({ ...updateData, updatedAt: now() }, { merge: true });
+      const dataToUpdate: any = { ...updateData, updatedAt: now() };
+
+      // If name changed, update lastNameChangeAt timestamp
+      if (nameChanged) {
+        dataToUpdate.lastNameChangeAt = now();
+      }
+
+      await ref.set(dataToUpdate, { merge: true });
 
       const snap = await ref.get();
       const updatedUser = { id: snap.id, ...snap.data() } as any;

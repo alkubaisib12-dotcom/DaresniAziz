@@ -374,6 +374,44 @@ export default function Navbar() {
                     </DropdownMenuGroup>
 
                     <DropdownMenuSeparator />
+
+                    {/* Games Section for Tutors */}
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        <Gamepad2 className="inline mr-1.5 h-3.5 w-3.5" />
+                        Mini Games
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          // Open memory match game
+                          const event = new CustomEvent("open-memory-game");
+                          window.dispatchEvent(event);
+                        }}
+                        data-testid="menu-item-memory-game-tutor"
+                      >
+                        <i className="fas fa-brain mr-2 w-4" />
+                        Memory Match
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          // Future: Add more games
+                          toast({
+                            title: "Coming Soon!",
+                            description: "More games will be available soon.",
+                          });
+                        }}
+                        data-testid="menu-item-more-games-tutor"
+                        className="text-muted-foreground"
+                      >
+                        <Gamepad2 className="mr-2 h-4 w-4" />
+                        More Games
+                        <Badge variant="outline" className="ml-auto text-xs">
+                          Soon
+                        </Badge>
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+
+                    <DropdownMenuSeparator />
                   </>
                 )}
 

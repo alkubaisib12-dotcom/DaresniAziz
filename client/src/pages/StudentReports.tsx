@@ -50,19 +50,21 @@ export default function StudentReports() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto py-8 px-4">
-        <h1 className="text-3xl font-bold mb-6">My Lesson Reports</h1>
-        <div className="space-y-4">
-          {[1, 2, 3].map((i) => (
-            <Card key={i}>
-              <CardHeader>
-                <Skeleton className="h-6 w-3/4" />
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="h-20 w-full" />
-              </CardContent>
-            </Card>
-          ))}
+      <div className="min-h-screen bg-background pt-20">
+        <div className="container mx-auto py-8 px-4">
+          <h1 className="text-3xl font-bold mb-6">My Lesson Reports</h1>
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <Card key={i}>
+                <CardHeader>
+                  <Skeleton className="h-6 w-3/4" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-20 w-full" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -70,19 +72,22 @@ export default function StudentReports() {
 
   if (error) {
     return (
-      <div className="container mx-auto py-8 px-4">
-        <h1 className="text-3xl font-bold mb-6">My Lesson Reports</h1>
-        <Alert variant="destructive">
-          <AlertDescription>
-            Failed to load reports. Please try again later.
-          </AlertDescription>
-        </Alert>
+      <div className="min-h-screen bg-background pt-20">
+        <div className="container mx-auto py-8 px-4">
+          <h1 className="text-3xl font-bold mb-6">My Lesson Reports</h1>
+          <Alert variant="destructive">
+            <AlertDescription>
+              Failed to load reports. Please try again later.
+            </AlertDescription>
+          </Alert>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto py-8 px-4">
+    <div className="min-h-screen bg-background pt-20">
+      <div className="container mx-auto py-8 px-4">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">My Lesson Reports</h1>
         <p className="text-muted-foreground">
@@ -113,6 +118,7 @@ export default function StudentReports() {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }
