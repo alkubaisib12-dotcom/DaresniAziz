@@ -324,15 +324,19 @@ async function saveMessage(
 ): Promise<string> {
   const messageId = db.collection("study_buddy_messages").doc().id;
 
-  const message: StudyBuddyMessage = {
+  const message: any = {
     messageId,
     conversationId,
     userId,
     role,
     content,
     timestamp: Timestamp.now(),
-    metadata,
   };
+
+  // Only add metadata if it's defined (Firestore doesn't accept undefined)
+  if (metadata) {
+    message.metadata = metadata;
+  }
 
   await db.collection("study_buddy_messages").doc(messageId).set(message);
 
