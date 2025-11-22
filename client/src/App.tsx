@@ -54,7 +54,7 @@ function AuthRouteGate() {
     queryKey: ["/api/tutors/profile"],
     enabled: !!user && user.role === "tutor",
     retry: false,
-    staleTime: 0,
+    staleTime: 300000, // Optimized: 5 minutes instead of 0
   });
 
   useEffect(() => {

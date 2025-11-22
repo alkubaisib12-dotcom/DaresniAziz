@@ -14,6 +14,7 @@ export interface User {
   lastName?: string;
   profileImageUrl?: string | null;
   role: UserRole;
+  lastNameChangeAt?: Date | null;  // Track when user last changed their name (7-day limit)
 
   // Tutor-related (optional at user level; full details live in TutorProfile)
   phone?: string;

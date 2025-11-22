@@ -24,7 +24,12 @@ import {
   Shield,
   Eye,
   XCircle,
+  TrendingUp,
+  DollarSign,
+  BarChart3,
+  Activity,
 } from "lucide-react";
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -95,6 +100,53 @@ interface AdminUser {
   createdAt: string;
 }
 
+interface StudentDetails {
+  student: Student;
+  sessions: any[];
+  stats: {
+    totalSessions: number;
+    completedSessions: number;
+    upcomingSessions: number;
+    cancelledSessions: number;
+  };
+}
+
+interface TutorSessions {
+  sessions: any[];
+  stats: {
+    totalSessions: number;
+    completedSessions: number;
+    upcomingSessions: number;
+    cancelledSessions: number;
+  };
+}
+
+interface AnalyticsData {
+  userGrowth: Array<{ date: string; students: number; tutors: number }>;
+  sessionStats: {
+    completed: number;
+    scheduled: number;
+    pending: number;
+    cancelled: number;
+    inProgress: number;
+  };
+  subjectStats: Array<{ name: string; sessions: number }>;
+  overview: {
+    totalStudents: number;
+    totalTutors: number;
+    verifiedTutors: number;
+    totalSessions: number;
+    completedSessions: number;
+    completionRate: number;
+    totalRevenue: number;
+  };
+  recentActivity: Array<{
+    id: string;
+    status: string;
+    scheduledAt: string;
+  }>;
+}
+
 export default function AdminDashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -104,13 +156,15 @@ export default function AdminDashboard() {
   const isAdmin = user?.role === "admin";
 
   const [currentTab, setCurrentTab] = useState<
-    "pending" | "notifications" | "students" | "tutors" | "admins"
-  >("pending");
+    "analytics" | "pending" | "notifications" | "students" | "tutors" | "admins"
+  >("analytics");
   const [userToDelete, setUserToDelete] = useState<{ id: string; type: string; name: string } | null>(
     null,
   );
   const [selectedTutor, setSelectedTutor] = useState<TutorProfile | null>(null);
   const [tutorToReject, setTutorToReject] = useState<TutorProfile | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [selectedTutorForSessions, setSelectedTutorForSessions] = useState<TutorProfile | null>(null);
 
   // Redirect away if not admin (runs after first render)
   useEffect(() => {
@@ -118,6 +172,13 @@ export default function AdminDashboard() {
       navigate("/", { replace: true });
     }
   }, [authLoading, isAdmin, navigate]);
+
+  // Fetch analytics data
+  const { data: analytics, isLoading: analyticsLoading } = useQuery<AnalyticsData>({
+    queryKey: ["/api/admin/analytics"],
+    enabled: isAdmin && currentTab === "analytics",
+    staleTime: 60000, // Cache for 1 minute
+  });
 
   // Fetch notifications
   const {
@@ -157,6 +218,20 @@ export default function AdminDashboard() {
   const { data: adminUsers = [], isLoading: adminsLoading } = useQuery<AdminUser[]>({
     queryKey: ["/api/admin/admins"],
     enabled: isAdmin && currentTab === "admins",
+  });
+
+  // Fetch student details with sessions
+  const { data: studentDetails, isLoading: studentDetailsLoading } = useQuery<StudentDetails>({
+    queryKey: ["/api/admin/students", selectedStudent?.id, "details"],
+    queryFn: () => apiRequest(`/api/admin/students/${selectedStudent?.id}/details`),
+    enabled: !!selectedStudent?.id,
+  });
+
+  // Fetch tutor sessions
+  const { data: tutorSessions, isLoading: tutorSessionsLoading } = useQuery<TutorSessions>({
+    queryKey: ["/api/admin/tutors", selectedTutorForSessions?.user?.id, "sessions"],
+    queryFn: () => apiRequest(`/api/admin/tutors/${selectedTutorForSessions?.user?.id}/sessions`),
+    enabled: !!selectedTutorForSessions?.user?.id,
   });
 
   // Mark notification as read
@@ -302,6 +377,30 @@ export default function AdminDashboard() {
     },
   });
 
+  // Mark all notifications as read
+  const markAllAsReadMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("/api/admin/notifications/mark-all-read", {
+        method: "POST",
+      });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/notifications"] });
+      toast({
+        title: "Success",
+        description: `Marked ${data.count} notification${data.count !== 1 ? 's' : ''} as read`,
+      });
+    },
+    onError: (error: any) => {
+      console.error("Error marking notifications as read:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to mark notifications as read",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleDeleteUser = () => {
     if (!userToDelete) return;
 
@@ -402,10 +501,14 @@ export default function AdminDashboard() {
         onValueChange={(v: any) => setCurrentTab(v)}
         className="space-y-6"
       >
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
+          <TabsTrigger value="analytics">
+            <BarChart3 className="h-4 w-4 mr-2" />
+            Analytics
+          </TabsTrigger>
           <TabsTrigger value="pending" className="relative">
             <Clock className="h-4 w-4 mr-2" />
-            Pending Review
+            Pending
             {pendingCount > 0 && (
               <Badge
                 variant="destructive"
@@ -417,7 +520,7 @@ export default function AdminDashboard() {
           </TabsTrigger>
           <TabsTrigger value="notifications">
             <Bell className="h-4 w-4 mr-2" />
-            Notifications
+            Alerts
             {unreadCount > 0 && <Badge variant="destructive">{unreadCount}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="students">
@@ -426,13 +529,239 @@ export default function AdminDashboard() {
           </TabsTrigger>
           <TabsTrigger value="tutors">
             <GraduationCap className="h-4 w-4 mr-2" />
-            All Tutors
+            Tutors
           </TabsTrigger>
           <TabsTrigger value="admins">
             <Shield className="h-4 w-4 mr-2" />
             Admins
           </TabsTrigger>
         </TabsList>
+
+        {/* ANALYTICS TAB */}
+        <TabsContent value="analytics">
+          {analyticsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#9B1B30]" />
+            </div>
+          ) : analytics ? (
+            <div className="space-y-6">
+              {/* Overview Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Total Sessions</p>
+                        <p className="text-3xl font-bold">{analytics.overview.totalSessions}</p>
+                        <p className="text-xs text-green-600 mt-1">
+                          {analytics.overview.completedSessions} completed
+                        </p>
+                      </div>
+                      <Activity className="h-10 w-10 text-blue-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Completion Rate</p>
+                        <p className="text-3xl font-bold">{analytics.overview.completionRate}%</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Success metric
+                        </p>
+                      </div>
+                      <TrendingUp className="h-10 w-10 text-green-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Total Revenue</p>
+                        <p className="text-3xl font-bold">{formatMoney(analytics.overview.totalRevenue)}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          From completed sessions
+                        </p>
+                      </div>
+                      <DollarSign className="h-10 w-10 text-[#9B1B30]" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Active Tutors</p>
+                        <p className="text-3xl font-bold">{analytics.overview.verifiedTutors}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {analytics.overview.totalTutors} total
+                        </p>
+                      </div>
+                      <Users className="h-10 w-10 text-purple-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Charts Row */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* User Growth Chart */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      User Growth (Last 30 Days)
+                    </CardTitle>
+                    <CardDescription>Students and tutors registered over time</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={analytics.userGrowth}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="date"
+                          tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          fontSize={12}
+                        />
+                        <YAxis fontSize={12} />
+                        <Tooltip
+                          labelFormatter={(value) => new Date(value).toLocaleDateString()}
+                          contentStyle={{ fontSize: 12 }}
+                        />
+                        <Legend />
+                        <Line type="monotone" dataKey="students" stroke="#3b82f6" strokeWidth={2} name="Students" />
+                        <Line type="monotone" dataKey="tutors" stroke="#9B1B30" strokeWidth={2} name="Tutors" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                {/* Session Status Distribution */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <BarChart3 className="h-5 w-5" />
+                      Session Status Distribution
+                    </CardTitle>
+                    <CardDescription>Breakdown of all sessions by status</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: 'Completed', value: analytics.sessionStats.completed, color: '#10b981' },
+                            { name: 'Scheduled', value: analytics.sessionStats.scheduled, color: '#3b82f6' },
+                            { name: 'Pending', value: analytics.sessionStats.pending, color: '#f59e0b' },
+                            { name: 'Cancelled', value: analytics.sessionStats.cancelled, color: '#ef4444' },
+                            { name: 'In Progress', value: analytics.sessionStats.inProgress, color: '#8b5cf6' },
+                          ].filter(item => item.value > 0)}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                          outerRadius={100}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {[
+                            { name: 'Completed', value: analytics.sessionStats.completed, color: '#10b981' },
+                            { name: 'Scheduled', value: analytics.sessionStats.scheduled, color: '#3b82f6' },
+                            { name: 'Pending', value: analytics.sessionStats.pending, color: '#f59e0b' },
+                            { name: 'Cancelled', value: analytics.sessionStats.cancelled, color: '#ef4444' },
+                            { name: 'In Progress', value: analytics.sessionStats.inProgress, color: '#8b5cf6' },
+                          ].filter(item => item.value > 0).map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Popular Subjects Bar Chart */}
+              {analytics.subjectStats.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <BookOpen className="h-5 w-5" />
+                      Most Popular Subjects
+                    </CardTitle>
+                    <CardDescription>Subjects with the highest number of sessions</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart data={analytics.subjectStats}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" fontSize={12} angle={-45} textAnchor="end" height={100} />
+                        <YAxis fontSize={12} />
+                        <Tooltip contentStyle={{ fontSize: 12 }} />
+                        <Bar dataKey="sessions" fill="#9B1B30" name="Sessions" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Quick Stats Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
+                  <CardContent className="p-6">
+                    <div className="text-center">
+                      <BookOpen className="h-8 w-8 mx-auto mb-2 text-blue-600" />
+                      <p className="text-sm font-medium text-muted-foreground">Total Students</p>
+                      <p className="text-4xl font-bold text-blue-900 my-2">{analytics.overview.totalStudents}</p>
+                      <p className="text-xs text-blue-700">Registered on platform</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-purple-50 to-purple-100">
+                  <CardContent className="p-6">
+                    <div className="text-center">
+                      <GraduationCap className="h-8 w-8 mx-auto mb-2 text-purple-600" />
+                      <p className="text-sm font-medium text-muted-foreground">Total Tutors</p>
+                      <p className="text-4xl font-bold text-purple-900 my-2">{analytics.overview.totalTutors}</p>
+                      <p className="text-xs text-purple-700">
+                        {analytics.overview.verifiedTutors} verified
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-green-50 to-green-100">
+                  <CardContent className="p-6">
+                    <div className="text-center">
+                      <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-600" />
+                      <p className="text-sm font-medium text-muted-foreground">Completed Sessions</p>
+                      <p className="text-4xl font-bold text-green-900 my-2">{analytics.overview.completedSessions}</p>
+                      <p className="text-xs text-green-700">
+                        {analytics.overview.completionRate}% completion rate
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <AlertCircle className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+                <p className="text-lg font-medium">No analytics data available</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Data will appear once there is activity on the platform
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
 
         {/* PENDING TUTORS TAB */}
         <TabsContent value="pending">
@@ -466,8 +795,7 @@ export default function AdminDashboard() {
               ) : pendingCount === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <CheckCircle className="h-16 w-16 mx-auto mb-4 text-green-500" />
-                  <p className="text-lg font-medium">All caught up!</p>
-                  <p className="text-sm">No pending tutor applications to review.</p>
+                  <p className="text-lg font-medium">No pending tutor</p>
                 </div>
               ) : (
                 <div className="space-y-6">
@@ -580,16 +908,29 @@ export default function AdminDashboard() {
                   System notifications and alerts requiring your attention.
                 </CardDescription>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => refetchNotifications()}
-                disabled={notificationsLoading}
-              >
-                <RefreshCw
-                  className={`h-4 w-4 ${notificationsLoading ? "animate-spin" : ""}`}
-                />
-              </Button>
+              <div className="flex gap-2">
+                {unreadCount > 0 && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => markAllAsReadMutation.mutate()}
+                    disabled={markAllAsReadMutation.isPending}
+                  >
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Mark All as Read
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetchNotifications()}
+                  disabled={notificationsLoading}
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${notificationsLoading ? "animate-spin" : ""}`}
+                  />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {notificationsLoading ? (
@@ -678,13 +1019,13 @@ export default function AdminDashboard() {
                   {students.map((student) => (
                     <div
                       key={student.id}
-                      className="p-4 border rounded-lg flex items-center justify-between"
+                      className="p-4 border rounded-lg flex items-center justify-between hover:bg-muted/50 transition-colors"
                     >
-                      <div className="flex items-center space-x-3">
+                      <div className="flex items-center space-x-3 flex-1">
                         <div className="h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center">
                           <User className="h-5 w-5" />
                         </div>
-                        <div>
+                        <div className="flex-1">
                           <h3 className="font-semibold">
                             {student.firstName} {student.lastName}
                           </h3>
@@ -697,19 +1038,29 @@ export default function AdminDashboard() {
                           </p>
                         </div>
                       </div>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() =>
-                          setUserToDelete({
-                            id: student.id,
-                            type: "student",
-                            name: `${student.firstName} ${student.lastName}`,
-                          })
-                        }
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedStudent(student)}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          View Details
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() =>
+                            setUserToDelete({
+                              id: student.id,
+                              type: "student",
+                              name: `${student.firstName} ${student.lastName}`,
+                            })
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -812,7 +1163,15 @@ export default function AdminDashboard() {
                           onClick={() => setSelectedTutor(tutor)}
                         >
                           <Eye className="h-4 w-4 mr-1" />
-                          View Details
+                          Profile
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedTutorForSessions(tutor)}
+                        >
+                          <Calendar className="h-4 w-4 mr-1" />
+                          Sessions
                         </Button>
                         {!tutor.profile.isVerified && (
                           <Button
@@ -1165,6 +1524,214 @@ export default function AdminDashboard() {
                 )}
               </div>
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Student Details Dialog */}
+      <Dialog open={!!selectedStudent} onOpenChange={() => setSelectedStudent(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Student Details & Sessions</DialogTitle>
+            <DialogDescription>
+              Complete information and session history for {selectedStudent?.firstName} {selectedStudent?.lastName}
+            </DialogDescription>
+          </DialogHeader>
+          {studentDetailsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#9B1B30]" />
+            </div>
+          ) : studentDetails ? (
+            <div className="space-y-6">
+              {/* Student Info */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Full Name</p>
+                  <p className="text-base font-semibold">
+                    {studentDetails.student.firstName} {studentDetails.student.lastName}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Email</p>
+                  <p className="text-base">{studentDetails.student.email}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Joined</p>
+                  <p className="text-base">
+                    {new Date(studentDetails.student.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Student ID</p>
+                  <p className="text-base font-mono text-xs">{studentDetails.student.id}</p>
+                </div>
+              </div>
+
+              {/* Stats Cards */}
+              <div className="grid grid-cols-4 gap-3">
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-blue-600">{studentDetails.stats.totalSessions}</p>
+                    <p className="text-xs text-muted-foreground">Total Sessions</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-green-600">{studentDetails.stats.completedSessions}</p>
+                    <p className="text-xs text-muted-foreground">Completed</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-orange-600">{studentDetails.stats.upcomingSessions}</p>
+                    <p className="text-xs text-muted-foreground">Upcoming</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-red-600">{studentDetails.stats.cancelledSessions}</p>
+                    <p className="text-xs text-muted-foreground">Cancelled</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Sessions List */}
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Session History</h3>
+                {studentDetails.sessions.length === 0 ? (
+                  <p className="text-center py-8 text-muted-foreground">No sessions found</p>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {studentDetails.sessions.map((session: any) => (
+                      <div key={session.id} className="p-3 border rounded-lg">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-medium">{session.subject?.name || "Unknown Subject"}</p>
+                              <Badge variant={
+                                session.status === 'completed' ? 'default' :
+                                session.status === 'scheduled' ? 'secondary' :
+                                session.status === 'cancelled' ? 'destructive' : 'outline'
+                              }>
+                                {session.status}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Tutor: {session.tutor?.user?.firstName} {session.tutor?.user?.lastName}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {session.scheduledAt && new Date(
+                                session.scheduledAt?.toDate ? session.scheduledAt.toDate() : session.scheduledAt
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold">
+                              {formatMoney(session.priceCents ? session.priceCents / 100 : (session.price || 0))}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{session.duration || 60} min</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-center py-8 text-muted-foreground">Failed to load student details</p>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Tutor Sessions Dialog */}
+      <Dialog open={!!selectedTutorForSessions} onOpenChange={() => setSelectedTutorForSessions(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Tutor Sessions</DialogTitle>
+            <DialogDescription>
+              Session history for {selectedTutorForSessions?.user?.firstName} {selectedTutorForSessions?.user?.lastName}
+            </DialogDescription>
+          </DialogHeader>
+          {tutorSessionsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#9B1B30]" />
+            </div>
+          ) : tutorSessions ? (
+            <div className="space-y-6">
+              {/* Stats Cards */}
+              <div className="grid grid-cols-4 gap-3">
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-blue-600">{tutorSessions.stats.totalSessions}</p>
+                    <p className="text-xs text-muted-foreground">Total Sessions</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-green-600">{tutorSessions.stats.completedSessions}</p>
+                    <p className="text-xs text-muted-foreground">Completed</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-orange-600">{tutorSessions.stats.upcomingSessions}</p>
+                    <p className="text-xs text-muted-foreground">Upcoming</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-red-600">{tutorSessions.stats.cancelledSessions}</p>
+                    <p className="text-xs text-muted-foreground">Cancelled</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Sessions List */}
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Session History</h3>
+                {tutorSessions.sessions.length === 0 ? (
+                  <p className="text-center py-8 text-muted-foreground">No sessions found</p>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {tutorSessions.sessions.map((session: any) => (
+                      <div key={session.id} className="p-3 border rounded-lg">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-medium">{session.subject?.name || "Unknown Subject"}</p>
+                              <Badge variant={
+                                session.status === 'completed' ? 'default' :
+                                session.status === 'scheduled' ? 'secondary' :
+                                session.status === 'cancelled' ? 'destructive' : 'outline'
+                              }>
+                                {session.status}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Student: {session.student?.firstName} {session.student?.lastName}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {session.scheduledAt && new Date(
+                                session.scheduledAt?.toDate ? session.scheduledAt.toDate() : session.scheduledAt
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold">
+                              {formatMoney(session.priceCents ? session.priceCents / 100 : (session.price || 0))}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{session.duration || 60} min</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-center py-8 text-muted-foreground">Failed to load tutor sessions</p>
           )}
         </DialogContent>
       </Dialog>

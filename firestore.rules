@@ -90,8 +90,9 @@ service cloud.firestore {
     match /tutor_subjects/{id} {
       allow read: if true;
 
-      // Any signed-in tutor can attach subjects; server can enforce details
-      allow create: if isSignedIn();
+      // Only admin/server can create tutor-subject links
+      // Regular users cannot create these directly
+      allow create: if isAdmin();
 
       // Only admin can modify / clean up
       allow update, delete: if isAdmin();
@@ -102,8 +103,9 @@ service cloud.firestore {
        ======================================== */
 
     match /tutoring_sessions/{sid} {
-      // Signed-in users can read (used for availability/conflict checks in client)
-      allow read: if isSignedIn();
+      // Only participants can read their own sessions
+      // Server handles conflict checking, not client
+      allow read: if isAdmin() || isInSession(resource);
 
       // Student creates their own session
       allow create: if isSignedIn()
@@ -169,6 +171,9 @@ service cloud.firestore {
       allow create: if isSignedIn()
                     && request.auth.uid == request.resource.data.uploaderId;
 
+      // File uploads are immutable (no updates allowed)
+      allow update: if false;
+
       // Uploader or admin can delete
       allow delete: if isAdmin()
         || (isSignedIn() && request.auth.uid == resource.data.uploaderId);
@@ -186,6 +191,7 @@ service cloud.firestore {
       );
 
       // System (Admin SDK / server) creates notifications
+      // Client cannot create notifications directly
       allow create: if false;
 
       // Users can mark their notifications as read; admin can update anything
@@ -213,6 +219,9 @@ service cloud.firestore {
       // Users can create their own favorites
       allow create: if isSignedIn()
                     && request.resource.data.userId == request.auth.uid;
+
+      // Favorites are immutable (no updates needed)
+      allow update: if false;
 
       // Users can delete their own favorites
       allow delete: if isSignedIn()

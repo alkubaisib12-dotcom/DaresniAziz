@@ -10,6 +10,7 @@ import { requireUser, requireAdmin, type AuthUser, fdb } from "./firebase-admin"
 import { z } from "zod";
 import { sendToAdmins, createTutorRegistrationEmail } from "./email";
 import { TutorRankingService } from "./services/tutorRanking";
+import studyBuddyRoutes from "./routes/studyBuddyRoutes";
 
 const chooseRoleSchema = z.object({
   role: z.enum(["student", "tutor", "admin"]),
@@ -493,8 +494,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updateData = updateSchema.parse(req.body);
       if (updateData.profileImageUrl === "") delete (updateData as any).profileImageUrl;
 
+      // Check if name is being changed
+      const nameChanged =
+        (updateData.firstName && updateData.firstName !== user.firstName) ||
+        (updateData.lastName && updateData.lastName !== user.lastName);
+
       const ref = fdb!.collection("users").doc(user.id);
-      await ref.set({ ...updateData, updatedAt: now() }, { merge: true });
+      const dataToUpdate: any = { ...updateData, updatedAt: now() };
+
+      // If name changed, update lastNameChangeAt timestamp
+      if (nameChanged) {
+        dataToUpdate.lastNameChangeAt = now();
+      }
+
+      await ref.set(dataToUpdate, { merge: true });
 
       const snap = await ref.get();
       const updatedUser = { id: snap.id, ...snap.data() } as any;
@@ -1086,6 +1099,114 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin analytics endpoint
+  app.get("/api/admin/analytics", requireUser, requireAdmin, async (_req, res) => {
+    try {
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      // Get all users with timestamps
+      const usersSnap = await fdb!.collection("users").get();
+      const users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+
+      // Get all sessions
+      const sessionsSnap = await fdb!.collection("tutoring_sessions").get();
+      const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+
+      // Get all tutor profiles for subjects
+      const tutorProfiles = await listCollection<any>("tutor_profiles");
+
+      // Calculate user growth (last 30 days)
+      const userGrowth: { date: string; students: number; tutors: number }[] = [];
+      for (let i = 29; i >= 0; i--) {
+        const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+        const dateStr = date.toISOString().split('T')[0];
+
+        const studentsCount = users.filter(u => {
+          if (u.role !== 'student') return false;
+          const createdAt = u.createdAt?.toDate ? u.createdAt.toDate() : new Date(u.createdAt);
+          return createdAt <= date;
+        }).length;
+
+        const tutorsCount = users.filter(u => {
+          if (u.role !== 'tutor') return false;
+          const createdAt = u.createdAt?.toDate ? u.createdAt.toDate() : new Date(u.createdAt);
+          return createdAt <= date;
+        }).length;
+
+        userGrowth.push({ date: dateStr, students: studentsCount, tutors: tutorsCount });
+      }
+
+      // Session statistics
+      const sessionStats = {
+        completed: sessions.filter(s => s.status === 'completed').length,
+        scheduled: sessions.filter(s => s.status === 'scheduled').length,
+        pending: sessions.filter(s => s.status === 'pending').length,
+        cancelled: sessions.filter(s => s.status === 'cancelled').length,
+        inProgress: sessions.filter(s => s.status === 'in-progress').length,
+      };
+
+      // Get all subjects and count sessions per subject
+      const subjectsSnap = await fdb!.collection("subjects").get();
+      const subjects = subjectsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+
+      const subjectStats = subjects.map(subject => {
+        const count = sessions.filter(s => s.subjectId === subject.id).length;
+        return {
+          name: subject.name,
+          sessions: count,
+        };
+      }).filter(s => s.sessions > 0).sort((a, b) => b.sessions - a.sessions).slice(0, 8);
+
+      // Calculate revenue (from completed sessions)
+      const totalRevenue = sessions
+        .filter(s => s.status === 'completed')
+        .reduce((sum, s) => {
+          const price = s.priceCents ? s.priceCents / 100 : (s.price || 0);
+          return sum + price;
+        }, 0);
+
+      // Session completion rate
+      const totalSessionsBooked = sessions.length;
+      const completedSessions = sessionStats.completed;
+      const completionRate = totalSessionsBooked > 0
+        ? Math.round((completedSessions / totalSessionsBooked) * 100)
+        : 0;
+
+      // Recent activity (last 10 sessions)
+      const recentSessions = sessions
+        .sort((a, b) => {
+          const aDate = a.scheduledAt?.toDate ? a.scheduledAt.toDate() : new Date(a.scheduledAt);
+          const bDate = b.scheduledAt?.toDate ? b.scheduledAt.toDate() : new Date(b.scheduledAt);
+          return bDate.getTime() - aDate.getTime();
+        })
+        .slice(0, 10);
+
+      res.json({
+        userGrowth,
+        sessionStats,
+        subjectStats,
+        overview: {
+          totalStudents: users.filter(u => u.role === 'student').length,
+          totalTutors: users.filter(u => u.role === 'tutor').length,
+          verifiedTutors: tutorProfiles.filter(t => t.isVerified).length,
+          totalSessions: totalSessionsBooked,
+          completedSessions,
+          completionRate,
+          totalRevenue: Math.round(totalRevenue * 100) / 100,
+        },
+        recentActivity: recentSessions.map(s => ({
+          id: s.id,
+          status: s.status,
+          scheduledAt: s.scheduledAt?.toDate ? s.scheduledAt.toDate().toISOString() : s.scheduledAt,
+        })),
+      });
+    } catch (error) {
+      console.error("Error fetching admin analytics:", error);
+      res.status(500).json({ message: "Failed to fetch analytics", fieldErrors: {} });
+    }
+  });
+
   app.get("/api/admin/students", requireUser, requireAdmin, async (_req, res) => {
     try {
       const snap = await fdb!.collection("users").where("role", "==", "student").get();
@@ -1093,6 +1214,164 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching students:", error);
       res.status(500).json({ message: "Failed to fetch students", fieldErrors: {} });
+    }
+  });
+
+  // Get student details with sessions
+  app.get("/api/admin/students/:userId/details", requireUser, requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      // Get student user data
+      const studentDoc = await fdb!.collection("users").doc(userId).get();
+      if (!studentDoc.exists) {
+        return res.status(404).json({ message: "Student not found", fieldErrors: {} });
+      }
+
+      const student = { id: studentDoc.id, ...studentDoc.data() };
+
+      // Get student's sessions
+      const sessionsSnap = await fdb!.collection("tutoring_sessions")
+        .where("studentId", "==", userId)
+        .orderBy("scheduledAt", "desc")
+        .limit(50)
+        .get();
+
+      const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Get unique tutor and subject IDs
+      const tutorIds = new Set<string>();
+      const subjectIds = new Set<string>();
+      sessions.forEach((s: any) => {
+        if (s.tutorId) tutorIds.add(s.tutorId);
+        if (s.subjectId) subjectIds.add(s.subjectId);
+      });
+
+      // Batch load tutors and subjects
+      const tutorsMap = await batchLoadMap<any>("tutor_profiles", Array.from(tutorIds));
+      const subjectsMap = await batchLoadMap<any>("subjects", Array.from(subjectIds));
+
+      // Get tutor user data
+      const tutorUserIds = Array.from(tutorsMap.values()).map((t: any) => t.userId).filter(Boolean);
+      const tutorUsersMap = await batchLoadMap<any>("users", tutorUserIds);
+
+      // Enrich sessions with tutor and subject data
+      const enrichedSessions = sessions.map((s: any) => {
+        const tutorProfile = s.tutorId ? tutorsMap.get(s.tutorId) : null;
+        const tutorUser = tutorProfile?.userId ? tutorUsersMap.get(tutorProfile.userId) : null;
+
+        return {
+          ...s,
+          tutor: tutorProfile ? {
+            ...tutorProfile,
+            user: tutorUser,
+          } : null,
+          subject: s.subjectId ? subjectsMap.get(s.subjectId) : null,
+        };
+      });
+
+      res.json({
+        student,
+        sessions: enrichedSessions,
+        stats: {
+          totalSessions: sessions.length,
+          completedSessions: sessions.filter((s: any) => s.status === 'completed').length,
+          upcomingSessions: sessions.filter((s: any) => s.status === 'scheduled').length,
+          cancelledSessions: sessions.filter((s: any) => s.status === 'cancelled').length,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching student details:", error);
+      res.status(500).json({ message: "Failed to fetch student details", fieldErrors: {} });
+    }
+  });
+
+  // Get tutor sessions
+  app.get("/api/admin/tutors/:userId/sessions", requireUser, requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      // Get tutor profile
+      const tutorProfileSnap = await fdb!.collection("tutor_profiles")
+        .where("userId", "==", userId)
+        .limit(1)
+        .get();
+
+      if (tutorProfileSnap.empty) {
+        return res.status(404).json({ message: "Tutor profile not found", fieldErrors: {} });
+      }
+
+      const tutorProfile = tutorProfileSnap.docs[0];
+
+      // Get tutor's sessions
+      const sessionsSnap = await fdb!.collection("tutoring_sessions")
+        .where("tutorId", "==", tutorProfile.id)
+        .orderBy("scheduledAt", "desc")
+        .limit(50)
+        .get();
+
+      const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Get unique student and subject IDs
+      const studentIds = new Set<string>();
+      const subjectIds = new Set<string>();
+      sessions.forEach((s: any) => {
+        if (s.studentId) studentIds.add(s.studentId);
+        if (s.subjectId) subjectIds.add(s.subjectId);
+      });
+
+      // Batch load students and subjects
+      const studentsMap = await batchLoadMap<any>("users", Array.from(studentIds));
+      const subjectsMap = await batchLoadMap<any>("subjects", Array.from(subjectIds));
+
+      // Enrich sessions
+      const enrichedSessions = sessions.map((s: any) => ({
+        ...s,
+        student: s.studentId ? studentsMap.get(s.studentId) : null,
+        subject: s.subjectId ? subjectsMap.get(s.subjectId) : null,
+      }));
+
+      res.json({
+        sessions: enrichedSessions,
+        stats: {
+          totalSessions: sessions.length,
+          completedSessions: sessions.filter((s: any) => s.status === 'completed').length,
+          upcomingSessions: sessions.filter((s: any) => s.status === 'scheduled').length,
+          cancelledSessions: sessions.filter((s: any) => s.status === 'cancelled').length,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching tutor sessions:", error);
+      res.status(500).json({ message: "Failed to fetch tutor sessions", fieldErrors: {} });
+    }
+  });
+
+  // Mark all notifications as read
+  app.post("/api/admin/notifications/mark-all-read", requireUser, requireAdmin, async (req, res) => {
+    try {
+      const userId = req.user!.id;
+
+      // Get all unread notifications for this admin
+      const unreadSnap = await fdb!.collection("notifications")
+        .where("recipientId", "==", userId)
+        .where("isRead", "==", false)
+        .get();
+
+      // Batch update all to read
+      const batch = fdb!.batch();
+      unreadSnap.docs.forEach(doc => {
+        batch.update(doc.ref, { isRead: true, readAt: now() });
+      });
+
+      await batch.commit();
+
+      res.json({
+        message: "All notifications marked as read",
+        count: unreadSnap.size,
+      });
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+      res.status(500).json({ message: "Failed to mark notifications as read", fieldErrors: {} });
     }
   });
 
@@ -1112,9 +1391,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/pending-tutors", requireUser, requireAdmin, async (_req, res) => {
     try {
       const profs = await listCollection<any>("tutor_profiles", [["isVerified", "==", false]]);
+
+      if (profs.length === 0) {
+        return res.json([]);
+      }
+
       const userIds = profs.map((p) => p.userId).filter(Boolean);
-      const usersMap = await batchLoadMap<any>("users", userIds);
-      const results = profs.map((p) => ({ profile: p, user: usersMap.get(p.userId) || null }));
+      const tutorIds = profs.map((p) => p.id);
+
+      // Load users and tutor_subjects
+      const [usersMap, tsDocs] = await Promise.all([
+        batchLoadMap<any>("users", userIds),
+        (async () => {
+          // fetch tutor_subjects in chunks of 10 for 'in' constraint
+          const chunks: string[][] = [];
+          for (let i = 0; i < tutorIds.length; i += 10) {
+            chunks.push(tutorIds.slice(i, i + 10));
+          }
+          const acc: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+          for (const chunk of chunks) {
+            const snap = await fdb!
+              .collection("tutor_subjects")
+              .where("tutorId", "in", chunk)
+              .get();
+            acc.push(...snap.docs);
+          }
+          return acc;
+        })(),
+      ]);
+
+      // Build tutorId -> subjectIds map
+      const tutorSubjectIds = new Map<string, string[]>();
+      for (const doc of tsDocs) {
+        const tid = doc.get("tutorId");
+        const sid = doc.get("subjectId");
+        if (!tutorSubjectIds.has(tid)) tutorSubjectIds.set(tid, []);
+        tutorSubjectIds.get(tid)!.push(sid);
+      }
+
+      // Batch load all subjects
+      const allSubjectIds = Array.from(new Set(tsDocs.map((d) => d.get("subjectId"))));
+      const subjectsMap = await batchLoadMap<any>("subjects", allSubjectIds);
+
+      // Enrich profiles with user and subjects
+      const results = profs.map((p) => {
+        const subjectIds = tutorSubjectIds.get(p.id) || [];
+        const subjects = subjectIds
+          .map((sid) => (subjectsMap.get(sid) ? { id: sid, ...subjectsMap.get(sid)! } : null))
+          .filter(Boolean);
+
+        return {
+          profile: p,
+          user: usersMap.get(p.userId) || null,
+          subjects,
+        };
+      });
+
       res.json(results);
     } catch (error) {
       console.error("Error fetching pending tutors:", error);
@@ -2656,6 +2988,10 @@ app.get("/api/tutors/:id", async (req, res) => {
       });
     }
   });
+
+  // === STUDY BUDDY ROUTES ===
+  // Mount all Study Buddy API routes
+  app.use("/api/study-buddy", studyBuddyRoutes);
 
   const httpServer = createServer(app);
   return httpServer;

@@ -127,7 +127,8 @@ export const useConversationMessages = (userId1: string, userId2: string) => {
     queryKey: ["messages", userId1, userId2],
     queryFn: () => getConversationMessages(userId1, userId2),
     enabled: !!userId1 && !!userId2,
-    refetchInterval: 5000, // Poll every 5 seconds for new messages
+    refetchInterval: 15000, // Optimized: 15s instead of 5s for messages
+    staleTime: 10000, // Cache for 10s
   });
 };
 

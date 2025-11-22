@@ -494,6 +494,20 @@ export default function PreSessionMemoryGame() {
     setIsOpen(false);
   };
 
+  // Listen for menu event to open the game
+  useEffect(() => {
+    const handleOpenMemoryGame = () => {
+      setIsOpen(true);
+      setShowBubble(true); // Show the game even if bubble was hidden
+    };
+
+    window.addEventListener("open-memory-game", handleOpenMemoryGame);
+
+    return () => {
+      window.removeEventListener("open-memory-game", handleOpenMemoryGame);
+    };
+  }, []);
+
   if (!showBubble) {
     return null;
   }
