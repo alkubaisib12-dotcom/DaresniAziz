@@ -92,7 +92,7 @@ const STATS_TTL_MS = 10 * 60 * 1000; // 10 minutes
 // Cache for /api/tutors
 let cachedTutors: any[] | null = null;
 let cachedTutorsFetchedAt = 0;
-const TUTORS_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const TUTORS_TTL_MS = 0; // Temporarily disabled for testing (was: 5 * 60 * 1000)
 
 function now() {
   return new Date();
@@ -1849,7 +1849,9 @@ app.get("/api/tutors", async (_req, res) => {
     const filteredTutors = tutorsWithSubjects.filter((tutor) => {
       // Check critical requirements for public visibility
       // CRITICAL: Price per hour must be greater than 0 OR per-subject pricing exists
-      const hasBasePrice = tutor.pricePerHour && tutor.pricePerHour > 0;
+      // Check BOTH pricePerHour and hourlyRate fields (some tutors use one or the other)
+      const hasBasePrice = (tutor.pricePerHour && tutor.pricePerHour > 0) ||
+                          (tutor.hourlyRate && tutor.hourlyRate > 0);
       const hasSubjectPricing = tutor.subjectPricing &&
                                typeof tutor.subjectPricing === 'object' &&
                                Object.values(tutor.subjectPricing).some((price: any) => price > 0);
@@ -1857,14 +1859,14 @@ app.get("/api/tutors", async (_req, res) => {
       const passes = hasBasePrice || hasSubjectPricing;
 
       // Debug logging
-      if (!passes) {
-        console.log(`[Tutor Filter] Blocking tutor ${tutor.user?.firstName || tutor.id}:`, {
-          hasBasePrice,
-          hasSubjectPricing,
-          pricePerHour: tutor.pricePerHour,
-          subjectPricing: tutor.subjectPricing,
-        });
-      }
+      console.log(`[Tutor Filter] ${tutor.user?.firstName || tutor.id}:`, {
+        passes: passes ? '✓ VISIBLE' : '✗ HIDDEN',
+        hasBasePrice,
+        hasSubjectPricing,
+        pricePerHour: tutor.pricePerHour,
+        hourlyRate: tutor.hourlyRate,
+        subjectPricing: tutor.subjectPricing,
+      });
 
       // Only show tutors that meet all critical requirements
       return passes;
