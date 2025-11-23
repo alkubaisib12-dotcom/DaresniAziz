@@ -1845,11 +1845,21 @@ app.get("/api/tutors", async (_req, res) => {
       };
     });
 
+    // Filter out tutors with critical missing data (incomplete profiles)
+    const filteredTutors = tutorsWithSubjects.filter((tutor) => {
+      // Check critical requirements for public visibility
+      // CRITICAL: Price per hour must be greater than 0
+      const hasPrice = tutor.pricePerHour && tutor.pricePerHour > 0;
+
+      // Only show tutors that meet all critical requirements
+      return hasPrice;
+    });
+
     // Update cache
-    cachedTutors = tutorsWithSubjects;
+    cachedTutors = filteredTutors;
     cachedTutorsFetchedAt = now;
 
-    res.json(tutorsWithSubjects);
+    res.json(filteredTutors);
   } catch (error) {
     console.error("Error fetching tutors:", error);
     res

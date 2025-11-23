@@ -22,6 +22,7 @@ import { useLocation } from "wouter";
 import { Calendar, Clock, CheckCircle, XCircle, AlertCircle, Save, Trash2, Download, Settings } from "lucide-react";
 import { format } from "date-fns";
 import { formatMoney } from "@/lib/currency";
+import { TutorProfileWarnings } from "@/components/TutorProfileWarnings";
 
 /** ---------- helpers ---------- */
 type DayAvailability = { isAvailable: boolean; startTime: string; endTime: string };
@@ -473,6 +474,9 @@ export default function TutorDashboard() {
             Edit Profile
           </Button>
         </div>
+
+        {/* Profile Validation Warnings */}
+        <TutorProfileWarnings tutorProfile={tutorProfile} />
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Main Content */}
