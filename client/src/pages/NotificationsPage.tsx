@@ -23,6 +23,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { ChatWindow } from "@/components/ChatWindow";
+import { useLocation } from "wouter";
 
 type Notification = {
   id: string;
@@ -68,9 +69,30 @@ function isMessageNotification(n: Notification): boolean {
   );
 }
 
+// Get the destination URL for a notification
+function getNotificationDestination(notification: Notification): string | null {
+  switch (notification.type) {
+    case "LESSON_REPORT":
+    case "NEW_LESSON_REPORT":
+    case "LESSON_REPORT_AVAILABLE":
+      return "/student-reports";
+    case "SESSION_REQUESTED":
+    case "SESSION_CONFIRMED":
+    case "SESSION_CANCELLED":
+    case "SESSION_REMINDER":
+      return "/sessions";
+    case "PAYMENT_RECEIVED":
+    case "PAYMENT_PENDING":
+      return "/payments";
+    default:
+      return null;
+  }
+}
+
 export default function NotificationsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
 
   const [activeChatUserId, setActiveChatUserId] = useState<string | null>(null);
 
@@ -146,6 +168,28 @@ export default function NotificationsPage() {
     }
 
     setActiveChatUserId(chatUserId);
+  };
+
+  const handleNotificationClick = (notification: Notification) => {
+    // Mark as read if unread
+    if (!notification.isRead) {
+      markReadMutation.mutate(notification.id);
+    }
+
+    // Check if it's a message notification - open chat
+    if (isMessageNotification(notification)) {
+      const chatUserId = getChatUserId(notification);
+      if (chatUserId) {
+        setActiveChatUserId(chatUserId);
+        return;
+      }
+    }
+
+    // Navigate to destination if available
+    const destination = getNotificationDestination(notification);
+    if (destination) {
+      navigate(destination);
+    }
   };
 
   const getNotificationIcon = (type: string) => {
@@ -272,6 +316,8 @@ export default function NotificationsPage() {
                 const isMessage = isMessageNotification(notification);
                 const chatUserId = getChatUserId(notification);
 
+                const hasDestination = isMessage || getNotificationDestination(notification);
+
                 return (
                   <Card
                     key={notification.id}
@@ -279,7 +325,8 @@ export default function NotificationsPage() {
                       notification.isRead
                         ? "opacity-70"
                         : "border-primary/60 shadow-sm"
-                    }`}
+                    } ${hasDestination ? "cursor-pointer hover:shadow-md" : ""}`}
+                    onClick={() => hasDestination && handleNotificationClick(notification)}
                   >
                     <CardContent className="p-4">
                       <div className="flex items-start gap-4">
@@ -318,9 +365,10 @@ export default function NotificationsPage() {
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  onClick={() =>
-                                    handleMarkAsRead(notification.id)
-                                  }
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleMarkAsRead(notification.id);
+                                  }}
                                   disabled={markReadMutation.isPending}
                                 >
                                   <Check className="h-4 w-4 mr-1" />
@@ -332,7 +380,10 @@ export default function NotificationsPage() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => handleOpenChat(notification)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenChat(notification);
+                                  }}
                                 >
                                   <MessageCircle className="h-4 w-4 mr-1" />
                                   Open chat
