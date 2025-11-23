@@ -88,6 +88,12 @@ export function SessionQuizDialog({
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Loading Quiz</DialogTitle>
+            <DialogDescription>
+              Please wait while we load your improvement quiz
+            </DialogDescription>
+          </DialogHeader>
           <div className="flex items-center justify-center py-8">
             <div className="text-center">
               <i className="fas fa-spinner fa-spin text-4xl text-primary mb-3" />
@@ -105,16 +111,21 @@ export function SessionQuizDialog({
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Quiz Not Available</DialogTitle>
+            <DialogDescription>
+              There was an issue loading the quiz for this session
+            </DialogDescription>
           </DialogHeader>
           <div className="p-8 text-center text-muted-foreground">
             <i className="fas fa-exclamation-circle text-4xl mb-3" />
             <p>
               {fetchError
                 ? "Failed to load quiz. Please try again later."
-                : "No quiz available for this session yet."}
+                : "The quiz is being generated. Please check back in a moment."}
             </p>
             <p className="text-xs mt-2">
-              Your tutor needs to generate a quiz first.
+              {fetchError
+                ? "There was an error connecting to the server."
+                : "The AI is creating a personalized quiz based on your lesson summary."}
             </p>
           </div>
           <DialogFooter>
