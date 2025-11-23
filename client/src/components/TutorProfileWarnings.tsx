@@ -70,8 +70,7 @@ export function TutorProfileWarnings({ tutorProfile }: TutorProfileWarningsProps
           </AlertTitle>
           <AlertDescription className="mt-2 text-yellow-800">
             <p className="mb-3">
-              Your profile is visible, but completing these optional fields will{" "}
-              <strong>increase your chances</strong> of being booked by students:
+              Completing these fields will <strong>increase your chances</strong> of being booked by students:
             </p>
             <ul className="list-disc list-inside space-y-1 mb-3">
               {validation.nonCriticalMissing.map((field) => (

@@ -20,16 +20,19 @@ export function validateTutorProfile(tutor: any): TutorValidationResult {
   const criticalMissing: string[] = [];
   const nonCriticalMissing: string[] = [];
 
-  // === CRITICAL MISSING DATA (blocks public visibility) ===
+  // === NO CRITICAL MISSING DATA - All tutors visible on /tutors page ===
+  // All validation criteria are non-critical (yellow warnings only)
+
+  // === NON-CRITICAL MISSING DATA (recommended but not required) ===
 
   // 1. Price per hour
   if (!tutor.pricePerHour || tutor.pricePerHour === 0) {
-    criticalMissing.push("pricePerHour");
+    nonCriticalMissing.push("pricePerHour");
   }
 
   // 2. Subjects array
   if (!tutor.subjects || !Array.isArray(tutor.subjects) || tutor.subjects.length === 0) {
-    criticalMissing.push("subjects");
+    nonCriticalMissing.push("subjects");
   }
 
   // 3. Availability schedule - at least one day must be enabled
@@ -39,39 +42,37 @@ export function validateTutorProfile(tutor: any): TutorValidationResult {
                            (day: any) => day?.isAvailable === true
                          );
   if (!hasAvailability) {
-    criticalMissing.push("availability");
+    nonCriticalMissing.push("availability");
   }
 
-  // === NON-CRITICAL MISSING DATA (recommended but not required) ===
-
-  // 1. Name (check both profile name and user name)
+  // 4. Name (check both profile name and user name)
   const hasName = (tutor.name && tutor.name.trim()) ||
                   (tutor.user?.firstName && tutor.user.firstName.trim());
   if (!hasName) {
     nonCriticalMissing.push("name");
   }
 
-  // 2. Bio/description
+  // 5. Bio/description
   if (!tutor.bio || !tutor.bio.trim()) {
     nonCriticalMissing.push("bio");
   }
 
-  // 3. Experience
+  // 6. Experience
   if (!tutor.experience || !tutor.experience.trim()) {
     nonCriticalMissing.push("experience");
   }
 
-  // 3. Education
+  // 7. Education
   if (!tutor.education || !tutor.education.trim()) {
     nonCriticalMissing.push("education");
   }
 
-  // 4. Languages
+  // 8. Languages
   if (!tutor.languages || !Array.isArray(tutor.languages) || tutor.languages.length === 0) {
     nonCriticalMissing.push("languages");
   }
 
-  // 5. Profile picture (checking both profileImage and user.profileImage)
+  // 9. Profile picture (checking both profileImage and user.profileImage)
   const hasProfilePicture = (tutor.profileImage && tutor.profileImage.trim()) ||
                             (tutor.user?.profileImage && tutor.user.profileImage.trim());
   if (!hasProfilePicture) {

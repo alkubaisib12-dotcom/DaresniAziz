@@ -1845,41 +1845,15 @@ app.get("/api/tutors", async (_req, res) => {
       };
     });
 
-    // Filter out tutors with critical missing data (incomplete profiles)
-    const filteredTutors = tutorsWithSubjects.filter((tutor) => {
-      // Check critical requirements for public visibility
-      // CRITICAL: pricePerHour, subjects, availability
-      const hasPrice = tutor.pricePerHour && tutor.pricePerHour > 0;
-      const hasSubjects = tutor.subjects && tutor.subjects.length > 0;
-
-      // Check if tutor has at least one day with availability enabled
-      const hasAvailability = tutor.availability &&
-                             typeof tutor.availability === 'object' &&
-                             Object.values(tutor.availability).some(
-                               (day: any) => day?.isAvailable === true
-                             );
-
-      // Debug logging to see which criteria are failing
-      if (!hasPrice || !hasSubjects || !hasAvailability) {
-        console.log(`[Tutor Filter] Blocking tutor ${tutor.user?.firstName || tutor.name || tutor.id}:`, {
-          hasPrice,
-          hasSubjects,
-          hasAvailability,
-          availabilityData: tutor.availability
-        });
-      }
-
-      // Only show tutors that meet all critical requirements
-      return hasPrice && hasSubjects && hasAvailability;
-    });
-
-    console.log(`[Tutor Filter] Total tutors: ${tutorsWithSubjects.length}, Visible: ${filteredTutors.length}, Hidden: ${tutorsWithSubjects.length - filteredTutors.length}`);
+    // No filtering - show all tutors regardless of profile completeness
+    // Profile validation only shows yellow warnings in tutor dashboard
+    console.log(`[Tutor List] Total tutors: ${tutorsWithSubjects.length}, All visible (no filtering)`);
 
     // Update cache
-    cachedTutors = filteredTutors;
+    cachedTutors = tutorsWithSubjects;
     cachedTutorsFetchedAt = now;
 
-    res.json(filteredTutors);
+    res.json(tutorsWithSubjects);
   } catch (error) {
     console.error("Error fetching tutors:", error);
     res
