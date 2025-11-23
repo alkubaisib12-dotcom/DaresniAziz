@@ -32,14 +32,7 @@ export function validateTutorProfile(tutor: any): TutorValidationResult {
     criticalMissing.push("subjects");
   }
 
-  // 3. Name (check both profile name and user name)
-  const hasName = (tutor.name && tutor.name.trim()) ||
-                  (tutor.user?.firstName && tutor.user.firstName.trim());
-  if (!hasName) {
-    criticalMissing.push("name");
-  }
-
-  // 4. Availability schedule - at least one day must be enabled
+  // 3. Availability schedule - at least one day must be enabled
   const hasAvailability = tutor.availability &&
                          typeof tutor.availability === 'object' &&
                          Object.values(tutor.availability).some(
@@ -51,12 +44,19 @@ export function validateTutorProfile(tutor: any): TutorValidationResult {
 
   // === NON-CRITICAL MISSING DATA (recommended but not required) ===
 
-  // 1. Bio/description
+  // 1. Name (check both profile name and user name)
+  const hasName = (tutor.name && tutor.name.trim()) ||
+                  (tutor.user?.firstName && tutor.user.firstName.trim());
+  if (!hasName) {
+    nonCriticalMissing.push("name");
+  }
+
+  // 2. Bio/description
   if (!tutor.bio || !tutor.bio.trim()) {
     nonCriticalMissing.push("bio");
   }
 
-  // 2. Experience
+  // 3. Experience
   if (!tutor.experience || !tutor.experience.trim()) {
     nonCriticalMissing.push("experience");
   }
