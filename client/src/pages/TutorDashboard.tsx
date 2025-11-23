@@ -127,16 +127,9 @@ export default function TutorDashboard() {
   // redirect unauthenticated
   useEffect(() => {
     if (!isLoading && !user) {
-      toast({
-        title: "Unauthorized",
-        description: "You are logged out. Redirecting…",
-        variant: "destructive",
-      });
-      setTimeout(() => {
-        window.location.href = "/api/login";
-      }, 500);
+      navigate("/", { replace: true });
     }
-  }, [user, isLoading, toast]);
+  }, [user, isLoading, navigate]);
 
   /** Sessions */
   const { data: sessions, isLoading: sessionsLoading } = useQuery<
