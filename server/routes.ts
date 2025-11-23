@@ -2413,9 +2413,67 @@ app.get("/api/tutors/:id", async (req, res) => {
         { merge: true }
       );
 
+      // Create or update Study Buddy conversation with the AI summary
+      let studyBuddyConvId: string | null = null;
+      try {
+        // Create a study buddy conversation for this session
+        const conversationRef = fdb!.collection("study_buddy_conversations").doc();
+        studyBuddyConvId = conversationRef.id;
+
+        // Format the AI summary as initial conversation context
+        const summaryMessage = `📚 **Lesson Report for ${subject || "your session"}**
+
+**What You Learned:**
+${aiSummary.whatWasLearned}
+
+**Your Strengths:**
+${aiSummary.strengths}
+
+**Areas for Improvement:**
+${aiSummary.mistakes}
+
+**Practice Tasks:**
+${aiSummary.practiceTasks}
+
+---
+
+I'm here to help you understand the concepts better and practice! Feel free to ask me questions about anything from your lesson.`;
+
+        await conversationRef.set({
+          conversationId: studyBuddyConvId,
+          userId: session.studentId,
+          sessionId: sessionId,
+          title: `${subject || "Session"} Review`,
+          summary: `Review conversation for ${subject || "session"} on ${new Date().toLocaleDateString()}`,
+          createdAt: now(),
+          updatedAt: now(),
+          messageCount: 1,
+        });
+
+        // Add the AI summary as the first message in the conversation
+        await fdb!.collection("study_buddy_messages").add({
+          conversationId: studyBuddyConvId,
+          userId: session.studentId,
+          role: "assistant",
+          content: summaryMessage,
+          timestamp: now(),
+          metadata: {
+            sessionId: sessionId,
+            generatedFromSummary: true,
+          },
+        });
+
+        console.log(`Study Buddy conversation created for session ${sessionId}`);
+      } catch (studyBuddyError) {
+        console.error("Error creating study buddy conversation (non-critical):", studyBuddyError);
+      }
+
       // Automatically generate quiz after summary is created
+      let quizGenerationError: string | null = null;
       try {
         const { generateSessionQuiz } = await import("./ai-quiz");
+
+        console.log(`Starting quiz generation for session ${sessionId}...`);
 
         // Generate the quiz
         const quizData = await generateSessionQuiz({
@@ -2423,6 +2481,8 @@ app.get("/api/tutors/:id", async (req, res) => {
           subject,
           studentName,
         });
+
+        console.log(`Quiz data generated, saving to Firestore...`);
 
         // Save the quiz to Firestore
         const quizRef = fdb!.collection("session_quizzes").doc();
@@ -2437,27 +2497,49 @@ app.get("/api/tutors/:id", async (req, res) => {
         await ref.set(
           {
             quizId: quizRef.id,
+            studyBuddyConversationId: studyBuddyConvId,
             updatedAt: now(),
           },
           { merge: true }
         );
 
-        console.log(`Quiz auto-generated for session ${sessionId}`);
-      } catch (quizError) {
+        console.log(`✅ Quiz auto-generated successfully for session ${sessionId} (Quiz ID: ${quizRef.id})`);
+      } catch (quizError: any) {
         // Log error but don't fail the summary generation
-        console.error("Error auto-generating quiz (non-critical):", quizError);
+        console.error("❌ Error auto-generating quiz:", quizError);
+        console.error("Quiz error details:", {
+          message: quizError.message,
+          stack: quizError.stack,
+        });
+        quizGenerationError = quizError.message || "Failed to generate quiz";
+
+        // Still save the study buddy conversation ID if it exists
+        if (studyBuddyConvId) {
+          await ref.set(
+            {
+              studyBuddyConversationId: studyBuddyConvId,
+              updatedAt: now(),
+            },
+            { merge: true }
+          );
+        }
       }
 
       // Send notification to student about new lesson report
       try {
+        const notificationBody = quizGenerationError
+          ? `Your tutor has created a lesson report for your ${subject || "session"}. Check out your Study Buddy to review!`
+          : `Your tutor has created a lesson report for your ${subject || "session"}. View the report, take the improvement quiz, and chat with your Study Buddy!`;
+
         await fdb!.collection("notifications").add({
           userId: session.studentId,
           audience: "user",
           type: "LESSON_REPORT_READY",
           title: "New Lesson Report Available",
-          body: `Your tutor has created a lesson report for your ${subject || "session"}. View the report and take the improvement quiz!`,
+          body: notificationBody,
           isRead: false,
           sessionId,
+          studyBuddyConversationId: studyBuddyConvId,
           createdAt: now(),
         });
         console.log(`Notification sent to student ${session.studentId}`);
@@ -2466,7 +2548,23 @@ app.get("/api/tutors/:id", async (req, res) => {
       }
 
       const updated = await ref.get();
-      res.json({ id: updated.id, ...updated.data() });
+      const responseData: any = { id: updated.id, ...updated.data() };
+
+      // Include quiz generation status for better UX
+      if (quizGenerationError) {
+        responseData.warnings = [
+          {
+            type: "quiz_generation_failed",
+            message: `Quiz generation failed: ${quizGenerationError}. The summary and study buddy were created successfully.`,
+          },
+        ];
+      }
+
+      if (studyBuddyConvId) {
+        responseData.studyBuddyConversationId = studyBuddyConvId;
+      }
+
+      res.json(responseData);
    } catch (error: any) {
   console.error("Error generating AI summary:", error);
 

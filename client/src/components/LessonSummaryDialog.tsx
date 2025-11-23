@@ -48,12 +48,24 @@ export function LessonSummaryDialog({
 
   const generateSummaryMutation = useMutation({
     mutationFn: () => generateAISummary(session.id),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/sessions"] });
       setError("");
-      // Show success message
-      alert("AI summary and quiz generated successfully!");
+
+      // Check if there are any warnings from the backend
+      if (data?.warnings && Array.isArray(data.warnings) && data.warnings.length > 0) {
+        const quizWarning = data.warnings.find((w: any) => w.type === "quiz_generation_failed");
+        if (quizWarning) {
+          alert(
+            `⚠️ Summary created successfully, but quiz generation encountered an issue:\n\n${quizWarning.message}\n\nThe Study Buddy has been set up for the student to review the lesson.`
+          );
+        } else {
+          alert("AI summary generated successfully! Study Buddy and quiz created.");
+        }
+      } else {
+        alert("AI summary generated successfully! Study Buddy and quiz created for the student.");
+      }
     },
     onError: (err: any) => {
       setError(err.message || "Failed to generate summary");
