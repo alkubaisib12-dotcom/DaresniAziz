@@ -174,11 +174,28 @@ export default function AdminDashboard() {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [selectedTutorForSessions, setSelectedTutorForSessions] = useState<TutorProfile | null>(null);
 
-  // Date range filter state
+  // Date range filter state (global)
   type DatePreset = "all" | "today" | "week" | "month" | "year" | "custom";
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
   const [fromDate, setFromDate] = useState<Date | undefined>(undefined);
   const [toDate, setToDate] = useState<Date | undefined>(undefined);
+
+  // Individual graph filters
+  const [userGrowthFilter, setUserGrowthFilter] = useState<DatePreset>("month");
+  const [userGrowthFrom, setUserGrowthFrom] = useState<Date | undefined>(() => {
+    const date = new Date();
+    date.setMonth(date.getMonth() - 1);
+    return date;
+  });
+  const [userGrowthTo, setUserGrowthTo] = useState<Date | undefined>(new Date());
+
+  const [sessionStatsFilter, setSessionStatsFilter] = useState<DatePreset>("all");
+  const [sessionStatsFrom, setSessionStatsFrom] = useState<Date | undefined>(undefined);
+  const [sessionStatsTo, setSessionStatsTo] = useState<Date | undefined>(undefined);
+
+  const [subjectStatsFilter, setSubjectStatsFilter] = useState<DatePreset>("all");
+  const [subjectStatsFrom, setSubjectStatsFrom] = useState<Date | undefined>(undefined);
+  const [subjectStatsTo, setSubjectStatsTo] = useState<Date | undefined>(undefined);
 
   // Date range filter helpers
   const setDateRange = (preset: DatePreset) => {
@@ -228,6 +245,62 @@ export default function AdminDashboard() {
     if (toDate && date > toDate) return false;
 
     return true;
+  };
+
+  // Helper function to set date range for individual graphs
+  const setGraphDateRange = (
+    preset: DatePreset,
+    setPreset: (p: DatePreset) => void,
+    setFrom: (d: Date | undefined) => void,
+    setTo: (d: Date | undefined) => void
+  ) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    setPreset(preset);
+
+    switch (preset) {
+      case "all":
+        setFrom(undefined);
+        setTo(undefined);
+        break;
+      case "today":
+        setFrom(today);
+        setTo(new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1));
+        break;
+      case "week":
+        const weekAgo = new Date(today);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        setFrom(weekAgo);
+        setTo(now);
+        break;
+      case "month":
+        const monthAgo = new Date(today);
+        monthAgo.setMonth(monthAgo.getMonth() - 1);
+        setFrom(monthAgo);
+        setTo(now);
+        break;
+      case "year":
+        const yearAgo = new Date(today);
+        yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+        setFrom(yearAgo);
+        setTo(now);
+        break;
+      case "custom":
+        break;
+    }
+  };
+
+  // Filter data by date range
+  const filterDataByDateRange = (data: any[], dateKey: string, from?: Date, to?: Date) => {
+    if (!from && !to) return data;
+
+    return data.filter(item => {
+      const itemDate = new Date(item[dateKey]);
+      if (from && itemDate < from) return false;
+      if (to && itemDate > to) return false;
+      return true;
+    });
   };
 
   // Helper function to safely format dates
@@ -332,7 +405,7 @@ export default function AdminDashboard() {
     }
   }, [authLoading, isAdmin, navigate]);
 
-  // Fetch analytics data
+  // Fetch analytics data (main/global)
   const { data: analytics, isLoading: analyticsLoading } = useQuery<AnalyticsData>({
     queryKey: ["/api/admin/analytics", fromDate?.toISOString(), toDate?.toISOString()],
     queryFn: () => {
@@ -344,6 +417,34 @@ export default function AdminDashboard() {
     },
     enabled: isAdmin && currentTab === "analytics",
     staleTime: 60000, // Cache for 1 minute
+  });
+
+  // Fetch session stats with individual filter
+  const { data: sessionStatsData } = useQuery<AnalyticsData>({
+    queryKey: ["/api/admin/analytics/sessionStats", sessionStatsFrom?.toISOString(), sessionStatsTo?.toISOString()],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (sessionStatsFrom) params.append("fromDate", sessionStatsFrom.toISOString());
+      if (sessionStatsTo) params.append("toDate", sessionStatsTo.toISOString());
+      const url = `/api/admin/analytics${params.toString() ? `?${params.toString()}` : ""}`;
+      return apiRequest(url);
+    },
+    enabled: isAdmin && currentTab === "analytics",
+    staleTime: 60000,
+  });
+
+  // Fetch subject stats with individual filter
+  const { data: subjectStatsData } = useQuery<AnalyticsData>({
+    queryKey: ["/api/admin/analytics/subjectStats", subjectStatsFrom?.toISOString(), subjectStatsTo?.toISOString()],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (subjectStatsFrom) params.append("fromDate", subjectStatsFrom.toISOString());
+      if (subjectStatsTo) params.append("toDate", subjectStatsTo.toISOString());
+      const url = `/api/admin/analytics${params.toString() ? `?${params.toString()}` : ""}`;
+      return apiRequest(url);
+    },
+    enabled: isAdmin && currentTab === "analytics",
+    staleTime: 60000,
   });
 
   // Fetch notifications
@@ -598,6 +699,111 @@ export default function AdminDashboard() {
       </div>
     );
   }
+
+  // Compact Graph Filter Component
+  const GraphFilter = ({
+    preset,
+    fromDate: from,
+    toDate: to,
+    onPresetChange,
+    onFromChange,
+    onToChange
+  }: {
+    preset: DatePreset;
+    fromDate?: Date;
+    toDate?: Date;
+    onPresetChange: (preset: DatePreset) => void;
+    onFromChange: (date?: Date) => void;
+    onToChange: (date?: Date) => void;
+  }) => (
+    <div className="flex flex-wrap gap-2 items-center text-xs">
+      <Button
+        variant={preset === "all" ? "default" : "outline"}
+        size="sm"
+        onClick={() => onPresetChange("all")}
+        className="h-7 px-2 text-xs"
+      >
+        All
+      </Button>
+      <Button
+        variant={preset === "week" ? "default" : "outline"}
+        size="sm"
+        onClick={() => onPresetChange("week")}
+        className="h-7 px-2 text-xs"
+      >
+        7d
+      </Button>
+      <Button
+        variant={preset === "month" ? "default" : "outline"}
+        size="sm"
+        onClick={() => onPresetChange("month")}
+        className="h-7 px-2 text-xs"
+      >
+        30d
+      </Button>
+      <Button
+        variant={preset === "year" ? "default" : "outline"}
+        size="sm"
+        onClick={() => onPresetChange("year")}
+        className="h-7 px-2 text-xs"
+      >
+        1y
+      </Button>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            variant={preset === "custom" ? "default" : "outline"}
+            size="sm"
+            className="h-7 px-2 text-xs"
+          >
+            <CalendarIcon className="h-3 w-3 mr-1" />
+            Custom
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <div className="p-3 space-y-2">
+            <div>
+              <p className="text-xs font-medium mb-1">From</p>
+              <CalendarComponent
+                mode="single"
+                selected={from}
+                onSelect={(date) => {
+                  onFromChange(date);
+                  onPresetChange("custom");
+                }}
+              />
+            </div>
+            <div>
+              <p className="text-xs font-medium mb-1">To</p>
+              <CalendarComponent
+                mode="single"
+                selected={to}
+                onSelect={(date) => {
+                  onToChange(date);
+                  onPresetChange("custom");
+                }}
+                disabled={(date) => from ? date < from : false}
+              />
+            </div>
+            {(from || to) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  onFromChange(undefined);
+                  onToChange(undefined);
+                  onPresetChange("all");
+                }}
+                className="w-full h-7 text-xs"
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -903,15 +1109,29 @@ export default function AdminDashboard() {
                 {/* User Growth Chart */}
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5" />
-                      User Growth (Last 30 Days)
-                    </CardTitle>
-                    <CardDescription>Students and tutors registered over time</CardDescription>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <TrendingUp className="h-5 w-5" />
+                          User Growth
+                        </CardTitle>
+                        <CardDescription>Students and tutors registered over time</CardDescription>
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t">
+                      <GraphFilter
+                        preset={userGrowthFilter}
+                        fromDate={userGrowthFrom}
+                        toDate={userGrowthTo}
+                        onPresetChange={(preset) => setGraphDateRange(preset, setUserGrowthFilter, setUserGrowthFrom, setUserGrowthTo)}
+                        onFromChange={setUserGrowthFrom}
+                        onToChange={setUserGrowthTo}
+                      />
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={300}>
-                      <LineChart data={analytics.userGrowth}>
+                      <LineChart data={filterDataByDateRange(analytics.userGrowth, 'date', userGrowthFrom, userGrowthTo)}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis
                           dataKey="date"
@@ -934,22 +1154,36 @@ export default function AdminDashboard() {
                 {/* Session Status Distribution */}
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <BarChart3 className="h-5 w-5" />
-                      Session Status Distribution
-                    </CardTitle>
-                    <CardDescription>Breakdown of all sessions by status</CardDescription>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <BarChart3 className="h-5 w-5" />
+                          Session Status Distribution
+                        </CardTitle>
+                        <CardDescription>Breakdown of all sessions by status</CardDescription>
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t">
+                      <GraphFilter
+                        preset={sessionStatsFilter}
+                        fromDate={sessionStatsFrom}
+                        toDate={sessionStatsTo}
+                        onPresetChange={(preset) => setGraphDateRange(preset, setSessionStatsFilter, setSessionStatsFrom, setSessionStatsTo)}
+                        onFromChange={setSessionStatsFrom}
+                        onToChange={setSessionStatsTo}
+                      />
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={300}>
                       <PieChart>
                         <Pie
                           data={[
-                            { name: 'Completed', value: analytics.sessionStats.completed, color: '#10b981' },
-                            { name: 'Scheduled', value: analytics.sessionStats.scheduled, color: '#3b82f6' },
-                            { name: 'Pending', value: analytics.sessionStats.pending, color: '#f59e0b' },
-                            { name: 'Cancelled', value: analytics.sessionStats.cancelled, color: '#ef4444' },
-                            { name: 'In Progress', value: analytics.sessionStats.inProgress, color: '#8b5cf6' },
+                            { name: 'Completed', value: (sessionStatsData?.sessionStats || analytics.sessionStats).completed, color: '#10b981' },
+                            { name: 'Scheduled', value: (sessionStatsData?.sessionStats || analytics.sessionStats).scheduled, color: '#3b82f6' },
+                            { name: 'Pending', value: (sessionStatsData?.sessionStats || analytics.sessionStats).pending, color: '#f59e0b' },
+                            { name: 'Cancelled', value: (sessionStatsData?.sessionStats || analytics.sessionStats).cancelled, color: '#ef4444' },
+                            { name: 'In Progress', value: (sessionStatsData?.sessionStats || analytics.sessionStats).inProgress, color: '#8b5cf6' },
                           ].filter(item => item.value > 0)}
                           cx="50%"
                           cy="50%"
@@ -960,11 +1194,11 @@ export default function AdminDashboard() {
                           dataKey="value"
                         >
                           {[
-                            { name: 'Completed', value: analytics.sessionStats.completed, color: '#10b981' },
-                            { name: 'Scheduled', value: analytics.sessionStats.scheduled, color: '#3b82f6' },
-                            { name: 'Pending', value: analytics.sessionStats.pending, color: '#f59e0b' },
-                            { name: 'Cancelled', value: analytics.sessionStats.cancelled, color: '#ef4444' },
-                            { name: 'In Progress', value: analytics.sessionStats.inProgress, color: '#8b5cf6' },
+                            { name: 'Completed', value: (sessionStatsData?.sessionStats || analytics.sessionStats).completed, color: '#10b981' },
+                            { name: 'Scheduled', value: (sessionStatsData?.sessionStats || analytics.sessionStats).scheduled, color: '#3b82f6' },
+                            { name: 'Pending', value: (sessionStatsData?.sessionStats || analytics.sessionStats).pending, color: '#f59e0b' },
+                            { name: 'Cancelled', value: (sessionStatsData?.sessionStats || analytics.sessionStats).cancelled, color: '#ef4444' },
+                            { name: 'In Progress', value: (sessionStatsData?.sessionStats || analytics.sessionStats).inProgress, color: '#8b5cf6' },
                           ].filter(item => item.value > 0).map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
                           ))}
@@ -977,18 +1211,32 @@ export default function AdminDashboard() {
               </div>
 
               {/* Popular Subjects Bar Chart */}
-              {analytics.subjectStats.length > 0 && (
+              {(subjectStatsData?.subjectStats || analytics.subjectStats).length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <BookOpen className="h-5 w-5" />
-                      Most Popular Subjects
-                    </CardTitle>
-                    <CardDescription>Subjects with the highest number of sessions</CardDescription>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <BookOpen className="h-5 w-5" />
+                          Most Popular Subjects
+                        </CardTitle>
+                        <CardDescription>Subjects with the highest number of sessions</CardDescription>
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t">
+                      <GraphFilter
+                        preset={subjectStatsFilter}
+                        fromDate={subjectStatsFrom}
+                        toDate={subjectStatsTo}
+                        onPresetChange={(preset) => setGraphDateRange(preset, setSubjectStatsFilter, setSubjectStatsFrom, setSubjectStatsTo)}
+                        onFromChange={setSubjectStatsFrom}
+                        onToChange={setSubjectStatsTo}
+                      />
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <ResponsiveContainer width="100%" height={300}>
-                      <BarChart data={analytics.subjectStats}>
+                      <BarChart data={subjectStatsData?.subjectStats || analytics.subjectStats}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="name" fontSize={12} angle={-45} textAnchor="end" height={100} />
                         <YAxis fontSize={12} />
