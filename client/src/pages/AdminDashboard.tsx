@@ -231,19 +231,71 @@ export default function AdminDashboard() {
   };
 
   // Helper function to safely format dates
-  const formatDate = (dateString: string | null | undefined): string => {
-    if (!dateString) return "N/A";
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return "Invalid Date";
-    return date.toLocaleDateString();
+  const formatDate = (dateValue: any): string => {
+    if (!dateValue) return "N/A";
+
+    try {
+      let date: Date;
+
+      // Handle Firestore Timestamp objects
+      if (dateValue?.toDate && typeof dateValue.toDate === 'function') {
+        date = dateValue.toDate();
+      }
+      // Handle Firestore Timestamp with _seconds
+      else if (dateValue?._seconds) {
+        date = new Date(dateValue._seconds * 1000);
+      }
+      // Handle Date objects
+      else if (dateValue instanceof Date) {
+        date = dateValue;
+      }
+      // Handle string/number
+      else {
+        date = new Date(dateValue);
+      }
+
+      // Validate the date
+      if (isNaN(date.getTime())) return "N/A";
+
+      return date.toLocaleDateString();
+    } catch (error) {
+      console.error("Error formatting date:", error, dateValue);
+      return "N/A";
+    }
   };
 
   // Helper function to safely format date and time
-  const formatDateTime = (dateString: string | Date | null | undefined): string => {
-    if (!dateString) return "N/A";
-    const date = dateString instanceof Date ? dateString : new Date(dateString);
-    if (isNaN(date.getTime())) return "Invalid Date";
-    return date.toLocaleString();
+  const formatDateTime = (dateValue: any): string => {
+    if (!dateValue) return "N/A";
+
+    try {
+      let date: Date;
+
+      // Handle Firestore Timestamp objects
+      if (dateValue?.toDate && typeof dateValue.toDate === 'function') {
+        date = dateValue.toDate();
+      }
+      // Handle Firestore Timestamp with _seconds
+      else if (dateValue?._seconds) {
+        date = new Date(dateValue._seconds * 1000);
+      }
+      // Handle Date objects
+      else if (dateValue instanceof Date) {
+        date = dateValue;
+      }
+      // Handle string/number
+      else {
+        date = new Date(dateValue);
+      }
+
+      // Validate the date
+      if (isNaN(date.getTime())) return "N/A";
+
+      return date.toLocaleString();
+    } catch (error) {
+      console.error("Error formatting date:", error, dateValue);
+      return "N/A";
+    }
   };
 
   // Helper function to get tutor pricing display

@@ -1379,11 +1379,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Mark all notifications as read
   app.post("/api/admin/notifications/mark-all-read", requireUser, requireAdmin, async (req, res) => {
     try {
-      const userId = req.user!.id;
-
-      // Get all unread notifications for this admin
+      // Get all unread admin notifications
       const unreadSnap = await fdb!.collection("notifications")
-        .where("userId", "==", userId)
+        .where("audience", "==", "admin")
         .where("isRead", "==", false)
         .get();
 
