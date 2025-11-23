@@ -180,14 +180,10 @@ export default function AdminDashboard() {
   const [fromDate, setFromDate] = useState<Date | undefined>(undefined);
   const [toDate, setToDate] = useState<Date | undefined>(undefined);
 
-  // Individual graph filters
-  const [userGrowthFilter, setUserGrowthFilter] = useState<DatePreset>("month");
-  const [userGrowthFrom, setUserGrowthFrom] = useState<Date | undefined>(() => {
-    const date = new Date();
-    date.setMonth(date.getMonth() - 1);
-    return date;
-  });
-  const [userGrowthTo, setUserGrowthTo] = useState<Date | undefined>(new Date());
+  // Individual graph filters (initialized to match global filter)
+  const [userGrowthFilter, setUserGrowthFilter] = useState<DatePreset>("all");
+  const [userGrowthFrom, setUserGrowthFrom] = useState<Date | undefined>(undefined);
+  const [userGrowthTo, setUserGrowthTo] = useState<Date | undefined>(undefined);
 
   const [sessionStatsFilter, setSessionStatsFilter] = useState<DatePreset>("all");
   const [sessionStatsFrom, setSessionStatsFrom] = useState<Date | undefined>(undefined);
@@ -404,6 +400,22 @@ export default function AdminDashboard() {
       navigate("/", { replace: true });
     }
   }, [authLoading, isAdmin, navigate]);
+
+  // Sync individual graph filters when global filter changes
+  useEffect(() => {
+    // Update all graph filters to match the global filter
+    setUserGrowthFilter(datePreset);
+    setUserGrowthFrom(fromDate);
+    setUserGrowthTo(toDate);
+
+    setSessionStatsFilter(datePreset);
+    setSessionStatsFrom(fromDate);
+    setSessionStatsTo(toDate);
+
+    setSubjectStatsFilter(datePreset);
+    setSubjectStatsFrom(fromDate);
+    setSubjectStatsTo(toDate);
+  }, [datePreset, fromDate, toDate]);
 
   // Fetch analytics data (main/global)
   const { data: analytics, isLoading: analyticsLoading } = useQuery<AnalyticsData>({
