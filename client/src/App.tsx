@@ -26,6 +26,7 @@ import StudentReports from "@/pages/StudentReports";
 import Navbar from "@/components/Navbar";
 import TutorEarningsReport from "@/pages/TutorEarningsReport";
 import PreSessionMemoryGame from "@/components/PreSessionMemoryGame";
+import GlobalStudyBuddy from "@/components/GlobalStudyBuddy";
 
 /** Small helper to support legacy /dashboard -> / */
 function DashboardAlias() {
@@ -210,6 +211,7 @@ export default function App() {
 
           <Toaster />
           <PreSessionMemoryGame />
+          <GlobalStudyBuddy />
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>

@@ -106,30 +106,54 @@ export function SessionQuizDialog({
   }
 
   if (fetchError || !quizData?.quiz) {
+    const errorMessage = fetchError ? (fetchError as any).message : null;
+    const isNotFound = errorMessage && errorMessage.includes("Quiz not found");
+
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Quiz Not Available</DialogTitle>
             <DialogDescription>
-              There was an issue loading the quiz for this session
+              {isNotFound
+                ? "The quiz hasn't been generated yet for this session"
+                : "There was an issue loading the quiz for this session"}
             </DialogDescription>
           </DialogHeader>
           <div className="p-8 text-center text-muted-foreground">
-            <i className="fas fa-exclamation-circle text-4xl mb-3" />
-            <p>
-              {fetchError
-                ? "Failed to load quiz. Please try again later."
+            <i className={`fas ${isNotFound ? "fa-hourglass-half" : "fa-exclamation-circle"} text-4xl mb-3`} />
+            <p className="font-semibold mb-2">
+              {isNotFound
+                ? "Quiz is being generated..."
+                : "Failed to load quiz"}
+            </p>
+            <p className="text-sm">
+              {isNotFound
+                ? "The AI is creating a personalized quiz based on your lesson summary. This usually takes a few moments."
+                : fetchError
+                ? "There was an error connecting to the server. Please try again later."
                 : "The quiz is being generated. Please check back in a moment."}
             </p>
-            <p className="text-xs mt-2">
-              {fetchError
-                ? "There was an error connecting to the server."
-                : "The AI is creating a personalized quiz based on your lesson summary."}
-            </p>
+            {isNotFound && (
+              <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <p className="text-sm text-blue-800 dark:text-blue-300">
+                  💡 <strong>Tip:</strong> While you wait, check out your Study Buddy! Your tutor's lesson report has been added there, and you can ask questions about the topics you learned.
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button onClick={() => onOpenChange(false)}>Close</Button>
+            {isNotFound && (
+              <Button
+                onClick={() => window.location.reload()}
+                variant="outline"
+                className="ml-2"
+              >
+                <i className="fas fa-sync-alt mr-2" />
+                Refresh
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
