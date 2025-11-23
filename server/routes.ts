@@ -1306,11 +1306,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get tutor's sessions
       const sessionsSnap = await fdb!.collection("tutoring_sessions")
         .where("tutorId", "==", tutorProfile.id)
-        .orderBy("scheduledAt", "desc")
-        .limit(50)
         .get();
 
-      const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Sort in memory to avoid needing a composite index
+      const sortedDocs = sessionsSnap.docs.sort((a, b) => {
+        const aTime = coerceMillis(a.get("scheduledAt"));
+        const bTime = coerceMillis(b.get("scheduledAt"));
+        return bTime - aTime; // descending
+      }).slice(0, 50); // limit to 50
+
+      const sessions = sortedDocs.map(d => ({ id: d.id, ...d.data() }));
 
       // Get unique student and subject IDs
       const studentIds = new Set<string>();

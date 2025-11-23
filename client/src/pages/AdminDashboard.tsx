@@ -229,6 +229,22 @@ export default function AdminDashboard() {
     return true;
   };
 
+  // Helper function to safely format dates
+  const formatDate = (dateString: string | null | undefined): string => {
+    if (!dateString) return "N/A";
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "Invalid Date";
+    return date.toLocaleDateString();
+  };
+
+  // Helper function to safely format date and time
+  const formatDateTime = (dateString: string | Date | null | undefined): string => {
+    if (!dateString) return "N/A";
+    const date = dateString instanceof Date ? dateString : new Date(dateString);
+    if (isNaN(date.getTime())) return "Invalid Date";
+    return date.toLocaleString();
+  };
+
   // Redirect away if not admin (runs after first render)
   useEffect(() => {
     if (!authLoading && !isAdmin) {
@@ -483,7 +499,8 @@ export default function AdminDashboard() {
   const filteredAllTutors = allTutors.filter((t) => isDateInRange(t.profile.createdAt));
   const filteredAdminUsers = adminUsers.filter((a) => isDateInRange(a.createdAt));
 
-  const unreadCount = filteredNotifications.filter((n) => !n.isRead).length;
+  // Count ALL unread notifications (not just filtered) for the "Mark All as Read" button
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
   const pendingCount = filteredPendingTutors.length;
 
   // IMPORTANT: this comes *after* all hooks, so hooks order is stable
@@ -1033,9 +1050,7 @@ export default function AdminDashboard() {
                           <div>
                             <p className="font-medium text-muted-foreground">Applied</p>
                             <p>
-                              {new Date(
-                                tutor.profile.createdAt,
-                              ).toLocaleDateString()}
+                              {formatDate(tutor.profile.createdAt)}
                             </p>
                           </div>
                         </div>
@@ -1154,7 +1169,7 @@ export default function AdminDashboard() {
                             {notification.body}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {new Date(notification.createdAt).toLocaleString()}
+                            {formatDateTime(notification.createdAt)}
                           </p>
                         </div>
                         {!notification.isRead && (
@@ -1219,8 +1234,7 @@ export default function AdminDashboard() {
                             {student.email}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Joined{" "}
-                            {new Date(student.createdAt).toLocaleDateString()}
+                            Joined {formatDate(student.createdAt)}
                           </p>
                         </div>
                       </div>
@@ -1297,10 +1311,7 @@ export default function AdminDashboard() {
                               {tutor.user?.email}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              Joined{" "}
-                              {new Date(
-                                tutor.profile.createdAt,
-                              ).toLocaleDateString()}
+                              Joined {formatDate(tutor.profile.createdAt)}
                             </p>
                           </div>
                         </div>
@@ -1436,8 +1447,7 @@ export default function AdminDashboard() {
                             {admin.email}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Joined{" "}
-                            {new Date(admin.createdAt).toLocaleDateString()}
+                            Joined {formatDate(admin.createdAt)}
                           </p>
                         </div>
                       </div>
@@ -1561,9 +1571,7 @@ export default function AdminDashboard() {
                       Application Date
                     </p>
                     <p className="text-base">
-                      {new Date(
-                        selectedTutor.profile.createdAt,
-                      ).toLocaleDateString()}
+                      {formatDate(selectedTutor.profile.createdAt)}
                     </p>
                   </div>
                   <div>
@@ -1744,7 +1752,7 @@ export default function AdminDashboard() {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Joined</p>
                   <p className="text-base">
-                    {new Date(studentDetails.student.createdAt).toLocaleDateString()}
+                    {formatDate(studentDetails.student.createdAt)}
                   </p>
                 </div>
                 <div>
@@ -1806,9 +1814,9 @@ export default function AdminDashboard() {
                               Tutor: {session.tutor?.user?.firstName} {session.tutor?.user?.lastName}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {session.scheduledAt && new Date(
+                              {session.scheduledAt && formatDateTime(
                                 session.scheduledAt?.toDate ? session.scheduledAt.toDate() : session.scheduledAt
-                              ).toLocaleString()}
+                              )}
                             </p>
                           </div>
                           <div className="text-right">
@@ -1898,9 +1906,9 @@ export default function AdminDashboard() {
                               Student: {session.student?.firstName} {session.student?.lastName}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {session.scheduledAt && new Date(
+                              {session.scheduledAt && formatDateTime(
                                 session.scheduledAt?.toDate ? session.scheduledAt.toDate() : session.scheduledAt
-                              ).toLocaleString()}
+                              )}
                             </p>
                           </div>
                           <div className="text-right">
