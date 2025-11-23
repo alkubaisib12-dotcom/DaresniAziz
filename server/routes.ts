@@ -1860,9 +1860,22 @@ app.get("/api/tutors", async (_req, res) => {
                                (day: any) => day?.isAvailable === true
                              );
 
+      // Debug logging to see which criteria are failing
+      if (!hasPrice || !hasSubjects || !hasName || !hasAvailability) {
+        console.log(`[Tutor Filter] Blocking tutor ${tutor.user?.firstName || tutor.name || tutor.id}:`, {
+          hasPrice,
+          hasSubjects,
+          hasName,
+          hasAvailability,
+          availabilityData: tutor.availability
+        });
+      }
+
       // Only show tutors that meet all critical requirements
       return hasPrice && hasSubjects && hasName && hasAvailability;
     });
+
+    console.log(`[Tutor Filter] Total tutors: ${tutorsWithSubjects.length}, Visible: ${filteredTutors.length}, Hidden: ${tutorsWithSubjects.length - filteredTutors.length}`);
 
     // Update cache
     cachedTutors = filteredTutors;
