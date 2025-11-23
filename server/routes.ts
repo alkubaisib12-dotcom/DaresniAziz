@@ -1854,9 +1854,23 @@ app.get("/api/tutors", async (_req, res) => {
                                typeof tutor.subjectPricing === 'object' &&
                                Object.values(tutor.subjectPricing).some((price: any) => price > 0);
 
+      const passes = hasBasePrice || hasSubjectPricing;
+
+      // Debug logging
+      if (!passes) {
+        console.log(`[Tutor Filter] Blocking tutor ${tutor.user?.firstName || tutor.id}:`, {
+          hasBasePrice,
+          hasSubjectPricing,
+          pricePerHour: tutor.pricePerHour,
+          subjectPricing: tutor.subjectPricing,
+        });
+      }
+
       // Only show tutors that meet all critical requirements
-      return hasBasePrice || hasSubjectPricing;
+      return passes;
     });
+
+    console.log(`[Tutor Filter] Total: ${tutorsWithSubjects.length}, Visible: ${filteredTutors.length}, Hidden: ${tutorsWithSubjects.length - filteredTutors.length}`);
 
     // Update cache
     cachedTutors = filteredTutors;
