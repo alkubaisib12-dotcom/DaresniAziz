@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { updateTutorNotes, generateAISummary, generateSessionQuiz } from "@/lib/api";
+import { updateTutorNotes, generateAISummary } from "@/lib/api";
 import type { ApiSession } from "@/lib/api";
 import { SessionQuizDialog } from "./SessionQuizDialog";
 
@@ -53,23 +53,10 @@ export function LessonSummaryDialog({
       queryClient.invalidateQueries({ queryKey: ["/api/tutor/sessions"] });
       setError("");
       // Show success message
-      alert("AI summary generated successfully!");
+      alert("AI summary and quiz generated successfully!");
     },
     onError: (err: any) => {
       setError(err.message || "Failed to generate summary");
-    },
-  });
-
-  const generateQuizMutation = useMutation({
-    mutationFn: () => generateSessionQuiz(session.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tutor/sessions"] });
-      setError("");
-      alert("Quiz generated successfully! Students can now take the quiz.");
-    },
-    onError: (err: any) => {
-      setError(err.message || "Failed to generate quiz");
     },
   });
 
@@ -376,29 +363,10 @@ export function LessonSummaryDialog({
             ) : (
               <>
                 <i className="fas fa-sparkles mr-2" />
-                Generate AI Summary
+                Generate AI Summary & Quiz
               </>
             )}
           </Button>
-          {session.aiSummary && (
-            <Button
-              onClick={() => generateQuizMutation.mutate()}
-              disabled={generateQuizMutation.isPending}
-              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-            >
-              {generateQuizMutation.isPending ? (
-                <>
-                  <i className="fas fa-spinner fa-spin mr-2" />
-                  Generating Quiz...
-                </>
-              ) : (
-                <>
-                  <i className="fas fa-clipboard-question mr-2" />
-                  Generate Quiz
-                </>
-              )}
-            </Button>
-          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -2391,7 +2391,7 @@ app.get("/api/tutors/:id", async (req, res) => {
       const subject = subjectSnap.exists ? subjectSnap.data()?.name : undefined;
 
       const studentSnap = await fdb!.collection("users").doc(session.studentId).get();
-      const studentName = studentSnap.exists ? studentSnap.data()?.name : undefined;
+      const studentName = studentSnap.exists ? `${studentSnap.data()?.firstName} ${studentSnap.data()?.lastName}` : undefined;
 
       // Generate the AI summary
       const aiSummary = await generateLessonSummary({
@@ -2412,6 +2412,41 @@ app.get("/api/tutors/:id", async (req, res) => {
         },
         { merge: true }
       );
+
+      // Automatically generate quiz after summary is created
+      try {
+        const { generateSessionQuiz } = await import("./ai-quiz");
+
+        // Generate the quiz
+        const quizData = await generateSessionQuiz({
+          aiSummary,
+          subject,
+          studentName,
+        });
+
+        // Save the quiz to Firestore
+        const quizRef = fdb!.collection("session_quizzes").doc();
+        await quizRef.set({
+          sessionId,
+          ...quizData,
+          createdAt: now(),
+          aiGenerated: true,
+        });
+
+        // Update session with quiz reference
+        await ref.set(
+          {
+            quizId: quizRef.id,
+            updatedAt: now(),
+          },
+          { merge: true }
+        );
+
+        console.log(`Quiz auto-generated for session ${sessionId}`);
+      } catch (quizError) {
+        // Log error but don't fail the summary generation
+        console.error("Error auto-generating quiz (non-critical):", quizError);
+      }
 
       const updated = await ref.get();
       res.json({ id: updated.id, ...updated.data() });
