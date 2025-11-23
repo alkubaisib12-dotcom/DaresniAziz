@@ -1330,8 +1330,9 @@ export default function AdminDashboard() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {[...analytics.topPerformingTutors]
-                        .sort((a, b) => {
+                      {(() => {
+                        // Sort tutors based on selected filter
+                        const sortedTutors = [...analytics.topPerformingTutors].sort((a, b) => {
                           if (tutorSortBy === "revenue") return b.revenue - a.revenue;
                           if (tutorSortBy === "sessions") return b.totalSessions - a.totalSessions;
                           if (tutorSortBy === "rating") {
@@ -1342,8 +1343,64 @@ export default function AdminDashboard() {
                             return b.totalReviews - a.totalReviews;
                           }
                           return 0; // "overall" - keep backend sorting
-                        })
-                        .map((tutor, index) => (
+                        });
+
+                        // Calculate ranks with tie-breaking
+                        const tutorsWithRank = sortedTutors.map((tutor, index, arr) => {
+                          let rank = index + 1;
+
+                          // Check if this tutor has the same value as previous tutor
+                          if (index > 0) {
+                            const prev = arr[index - 1];
+                            const prevRank = index; // This will be updated in the loop
+
+                            let isTied = false;
+                            if (tutorSortBy === "revenue") {
+                              isTied = tutor.revenue === prev.revenue;
+                            } else if (tutorSortBy === "sessions") {
+                              isTied = tutor.totalSessions === prev.totalSessions;
+                            } else if (tutorSortBy === "rating") {
+                              isTied = tutor.averageRating === prev.averageRating && tutor.totalReviews === prev.totalReviews;
+                            } else {
+                              // For "overall", compare scores (rounded to 2 decimals to handle floating point)
+                              isTied = Math.round((tutor as any).score * 100) === Math.round((prev as any).score * 100);
+                            }
+
+                            // Find the rank of the previous tutor
+                            if (isTied && index > 0) {
+                              // Find what rank the previous tutor got
+                              for (let i = index - 1; i >= 0; i--) {
+                                const checkTutor = arr[i];
+                                let checkTied = false;
+
+                                if (tutorSortBy === "revenue") {
+                                  checkTied = tutor.revenue === checkTutor.revenue;
+                                } else if (tutorSortBy === "sessions") {
+                                  checkTied = tutor.totalSessions === checkTutor.totalSessions;
+                                } else if (tutorSortBy === "rating") {
+                                  checkTied = tutor.averageRating === checkTutor.averageRating && tutor.totalReviews === checkTutor.totalReviews;
+                                } else {
+                                  checkTied = Math.round((tutor as any).score * 100) === Math.round((checkTutor as any).score * 100);
+                                }
+
+                                if (checkTied) {
+                                  continue;
+                                } else {
+                                  rank = i + 2;
+                                  break;
+                                }
+
+                                if (i === 0 && checkTied) {
+                                  rank = 1;
+                                }
+                              }
+                            }
+                          }
+
+                          return { ...tutor, rank };
+                        });
+
+                        return tutorsWithRank.map((tutor, index) => (
                         <div
                           key={tutor.tutorId}
                           className="flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
@@ -1351,12 +1408,12 @@ export default function AdminDashboard() {
                           <div className="flex items-center gap-4 flex-1">
                             {/* Rank Badge */}
                             <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ${
-                              index === 0 ? 'bg-yellow-100 text-yellow-700' :
-                              index === 1 ? 'bg-gray-100 text-gray-700' :
-                              index === 2 ? 'bg-orange-100 text-orange-700' :
+                              tutor.rank === 1 ? 'bg-yellow-100 text-yellow-700' :
+                              tutor.rank === 2 ? 'bg-gray-100 text-gray-700' :
+                              tutor.rank === 3 ? 'bg-orange-100 text-orange-700' :
                               'bg-blue-50 text-blue-700'
                             }`}>
-                              {index + 1}
+                              {tutor.rank}
                             </div>
 
                             {/* Avatar and Name */}
@@ -1404,7 +1461,8 @@ export default function AdminDashboard() {
                             </div>
                           </div>
                         </div>
-                      ))}
+                      ));
+                      })()}
                     </div>
                   </CardContent>
                 </Card>
