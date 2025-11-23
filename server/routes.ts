@@ -1845,11 +1845,25 @@ app.get("/api/tutors", async (_req, res) => {
       };
     });
 
+    // Filter out tutors with critical missing data (incomplete profiles)
+    const filteredTutors = tutorsWithSubjects.filter((tutor) => {
+      // Check critical requirements for public visibility
+      const hasPrice = tutor.pricePerHour && tutor.pricePerHour > 0;
+      const hasSubjects = tutor.subjects && tutor.subjects.length > 0;
+      const hasName = (tutor.name && tutor.name.trim()) ||
+                      (tutor.user?.firstName && tutor.user.firstName.trim());
+      const hasBookingOption = tutor.onlineSessionAvailable === true ||
+                               tutor.physicalSessionAvailable === true;
+
+      // Only show tutors that meet all critical requirements
+      return hasPrice && hasSubjects && hasName && hasBookingOption;
+    });
+
     // Update cache
-    cachedTutors = tutorsWithSubjects;
+    cachedTutors = filteredTutors;
     cachedTutorsFetchedAt = now;
 
-    res.json(tutorsWithSubjects);
+    res.json(filteredTutors);
   } catch (error) {
     console.error("Error fetching tutors:", error);
     res
