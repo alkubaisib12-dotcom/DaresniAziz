@@ -1249,14 +1249,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
             revenue: Math.round(revenue * 100) / 100,
           };
         })
-        .filter(t => t.totalSessions > 0) // Only tutors with at least 1 session
-        .sort((a, b) => {
-          // Sort by a composite score: completion rate + rating + sessions
-          const scoreA = (a.completionRate * 0.3) + (a.averageRating * 20 * 0.4) + (a.totalSessions * 0.3);
-          const scoreB = (b.completionRate * 0.3) + (b.averageRating * 20 * 0.4) + (b.totalSessions * 0.3);
-          return scoreB - scoreA;
-        })
-        .slice(0, 10); // Top 10 tutors
+        .filter(t => t.totalSessions > 0); // Only tutors with at least 1 session
+
+      // Calculate normalized scores for overall ranking
+      const maxRevenue = Math.max(...tutorPerformance.map(t => t.revenue), 1);
+      const maxSessions = Math.max(...tutorPerformance.map(t => t.totalSessions), 1);
+
+      const rankedTutors = tutorPerformance.map(t => {
+        // Only rank tutors with at least one completed session
+        if (t.completedSessions === 0) {
+          return { ...t, score: 0 };
+        }
+
+        // Normalize values to 0-100 scale
+        const normalizedRevenue = (t.revenue / maxRevenue) * 100;
+        const normalizedSessions = (t.totalSessions / maxSessions) * 100;
+        const normalizedRating = (t.averageRating / 5) * 100;
+        const normalizedCompletion = t.completionRate;
+
+        // Weighted score: 30% revenue, 25% completion, 25% rating, 20% sessions
+        const score = (
+          (normalizedRevenue * 0.30) +
+          (normalizedCompletion * 0.25) +
+          (normalizedRating * 0.25) +
+          (normalizedSessions * 0.20)
+        );
+
+        return { ...t, score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10); // Top 10 tutors
 
       res.json({
         userGrowth,
@@ -1276,7 +1298,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: s.status,
           scheduledAt: s.scheduledAt?.toDate ? s.scheduledAt.toDate().toISOString() : s.scheduledAt,
         })),
-        topPerformingTutors: tutorPerformance,
+        topPerformingTutors: rankedTutors,
       });
     } catch (error) {
       console.error("Error fetching admin analytics:", error);

@@ -210,6 +210,10 @@ export default function AdminDashboard() {
   const [subjectStatsFrom, setSubjectStatsFrom] = useState<Date | undefined>(undefined);
   const [subjectStatsTo, setSubjectStatsTo] = useState<Date | undefined>(undefined);
 
+  // Tutor performance filter
+  type TutorSortBy = "overall" | "revenue" | "sessions" | "rating";
+  const [tutorSortBy, setTutorSortBy] = useState<TutorSortBy>("overall");
+
   // Date range filter helpers
   const setDateRange = (preset: DatePreset) => {
     const now = new Date();
@@ -1286,12 +1290,60 @@ export default function AdminDashboard() {
                       Top Performing Tutors
                     </CardTitle>
                     <CardDescription>
-                      Best performing tutors based on completion rate, ratings, and sessions
+                      Best performing tutors ranked by different metrics
                     </CardDescription>
+                    {/* Filter Tabs */}
+                    <div className="flex gap-2 mt-4 pt-4 border-t">
+                      <Button
+                        variant={tutorSortBy === "overall" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setTutorSortBy("overall")}
+                        className="flex-1"
+                      >
+                        Overall Best
+                      </Button>
+                      <Button
+                        variant={tutorSortBy === "revenue" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setTutorSortBy("revenue")}
+                        className="flex-1"
+                      >
+                        Highest Revenue
+                      </Button>
+                      <Button
+                        variant={tutorSortBy === "sessions" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setTutorSortBy("sessions")}
+                        className="flex-1"
+                      >
+                        Most Sessions
+                      </Button>
+                      <Button
+                        variant={tutorSortBy === "rating" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setTutorSortBy("rating")}
+                        className="flex-1"
+                      >
+                        Highest Rated
+                      </Button>
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {analytics.topPerformingTutors.map((tutor, index) => (
+                      {[...analytics.topPerformingTutors]
+                        .sort((a, b) => {
+                          if (tutorSortBy === "revenue") return b.revenue - a.revenue;
+                          if (tutorSortBy === "sessions") return b.totalSessions - a.totalSessions;
+                          if (tutorSortBy === "rating") {
+                            // Sort by rating first, then by review count
+                            if (b.averageRating !== a.averageRating) {
+                              return b.averageRating - a.averageRating;
+                            }
+                            return b.totalReviews - a.totalReviews;
+                          }
+                          return 0; // "overall" - keep backend sorting
+                        })
+                        .map((tutor, index) => (
                         <div
                           key={tutor.tutorId}
                           className="flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
@@ -1329,7 +1381,9 @@ export default function AdminDashboard() {
                           <div className="flex items-center gap-6 text-sm">
                             <div className="text-center">
                               <p className="text-xs text-muted-foreground">Sessions</p>
-                              <p className="font-semibold">{tutor.totalSessions}</p>
+                              <p className={`font-semibold ${tutorSortBy === 'sessions' ? 'text-[#9B1B30] text-lg' : ''}`}>
+                                {tutor.totalSessions}
+                              </p>
                             </div>
                             <div className="text-center">
                               <p className="text-xs text-muted-foreground">Completion</p>
@@ -1337,8 +1391,19 @@ export default function AdminDashboard() {
                             </div>
                             <div className="text-center">
                               <p className="text-xs text-muted-foreground">Revenue</p>
-                              <p className="font-semibold">BHD {tutor.revenue.toFixed(2)}</p>
+                              <p className={`font-semibold ${tutorSortBy === 'revenue' ? 'text-[#9B1B30] text-lg' : ''}`}>
+                                BHD {tutor.revenue.toFixed(2)}
+                              </p>
                             </div>
+                            {tutor.averageRating > 0 && tutorSortBy === 'rating' && (
+                              <div className="text-center">
+                                <p className="text-xs text-muted-foreground">Rating</p>
+                                <p className="font-semibold text-[#9B1B30] text-lg flex items-center gap-1">
+                                  <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                                  {tutor.averageRating.toFixed(1)}
+                                </p>
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))}
