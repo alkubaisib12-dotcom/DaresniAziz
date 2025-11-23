@@ -78,6 +78,12 @@ function getNotificationDestination(notification: Notification): string | null {
     case "LESSON_REPORT_READY":
       return "/student-reports";
     case "SESSION_REQUESTED":
+      // Check if this is a tutor notification (student requesting a session)
+      if (notification.title?.toLowerCase().includes("session request") ||
+          notification.body?.toLowerCase().includes("student requested")) {
+        return "/tutor-dashboard";
+      }
+      return "/sessions";
     case "SESSION_CONFIRMED":
     case "SESSION_CANCELLED":
     case "SESSION_REMINDER":
