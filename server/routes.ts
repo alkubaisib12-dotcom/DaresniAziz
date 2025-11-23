@@ -2448,6 +2448,23 @@ app.get("/api/tutors/:id", async (req, res) => {
         console.error("Error auto-generating quiz (non-critical):", quizError);
       }
 
+      // Send notification to student about new lesson report
+      try {
+        await fdb!.collection("notifications").add({
+          userId: session.studentId,
+          audience: "user",
+          type: "LESSON_REPORT_READY",
+          title: "New Lesson Report Available",
+          body: `Your tutor has created a lesson report for your ${subject || "session"}. View the report and take the improvement quiz!`,
+          isRead: false,
+          sessionId,
+          createdAt: now(),
+        });
+        console.log(`Notification sent to student ${session.studentId}`);
+      } catch (notifError) {
+        console.error("Error sending notification (non-critical):", notifError);
+      }
+
       const updated = await ref.get();
       res.json({ id: updated.id, ...updated.data() });
    } catch (error: any) {
