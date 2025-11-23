@@ -1276,15 +1276,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const normalizedRating = (ratingScore * 0.7) + (reviewConfidence * 0.3);
 
         // Final weighted score based on real-world tutor performance:
-        // - Sessions matter most (40%) - student demand & activity
-        // - Revenue second (30%) - earnings & value
-        // - Ratings third (20%) - quality & student satisfaction
-        // - Completion least (10%) - reliability (low weight as cancellations often student-caused)
+        // - Sessions (40%) - student demand & activity
+        // - Ratings (40%) - quality & student satisfaction with review confidence
+        // - Completion (20%) - reliability (moderate weight as cancellations often student-caused)
         const score = (
           (normalizedSessions * 0.40) +
-          (normalizedRevenue * 0.30) +
-          (normalizedRating * 0.20) +
-          (normalizedCompletion * 0.10)
+          (normalizedRating * 0.40) +
+          (normalizedCompletion * 0.20)
         );
 
         return { ...t, score: Math.round(score * 100) / 100 };
