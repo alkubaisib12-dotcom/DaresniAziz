@@ -19,7 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import TutorAnalyticsSection from "@/components/TutorAnalyticsSection";
 import PreSessionMemoryGame from "@/components/PreSessionMemoryGame";
 import { useLocation } from "wouter";
-import { Calendar, Clock, CheckCircle, XCircle, AlertCircle, Save, Trash2, Download } from "lucide-react";
+import { Calendar, Clock, CheckCircle, XCircle, AlertCircle, Save, Trash2, Download, Settings } from "lucide-react";
 import { format } from "date-fns";
 import { formatMoney } from "@/lib/currency";
 
@@ -457,11 +457,21 @@ export default function TutorDashboard() {
     <div className="min-h-screen bg-background pt-16">
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground" data-testid="text-dashboard-title">
-            Welcome, {user.firstName || "Tutor"}!
-          </h1>
-          <p className="text-muted-foreground mt-2">Manage your tutoring sessions and students</p>
+        <div className="mb-8 flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground" data-testid="text-dashboard-title">
+              Welcome, {user.firstName || "Tutor"}!
+            </h1>
+            <p className="text-muted-foreground mt-2">Manage your tutoring sessions and students</p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => navigate("/profile-settings")}
+            className="flex items-center gap-2"
+          >
+            <Settings className="h-4 w-4" />
+            Edit Profile
+          </Button>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
