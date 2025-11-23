@@ -39,18 +39,15 @@ export function validateTutorProfile(tutor: any): TutorValidationResult {
     criticalMissing.push("name");
   }
 
-  // 4. Booking options - at least one must be enabled
-  const hasBookingOption = tutor.onlineSessionAvailable === true ||
-                           tutor.physicalSessionAvailable === true;
-  if (!hasBookingOption) {
-    criticalMissing.push("bookingOptions");
+  // 4. Availability schedule - at least one day must be enabled
+  const hasAvailability = tutor.availability &&
+                         typeof tutor.availability === 'object' &&
+                         Object.values(tutor.availability).some(
+                           (day: any) => day?.isAvailable === true
+                         );
+  if (!hasAvailability) {
+    criticalMissing.push("availability");
   }
-
-  // 5. Availability (optional check - only if availability system is implemented)
-  // Note: This is commented out as availability might not be a hard requirement
-  // if (tutor.availability && Array.isArray(tutor.availability) && tutor.availability.length === 0) {
-  //   criticalMissing.push("availability");
-  // }
 
   // === NON-CRITICAL MISSING DATA (recommended but not required) ===
 
@@ -96,8 +93,7 @@ export function getFieldDisplayName(fieldName: string): string {
     pricePerHour: "Price per hour",
     subjects: "Teaching subjects",
     name: "Name",
-    bookingOptions: "Booking availability (online or physical sessions)",
-    availability: "Availability schedule",
+    availability: "Availability schedule (at least one day must be enabled)",
     bio: "Bio/About me",
     experience: "Experience",
     education: "Education",

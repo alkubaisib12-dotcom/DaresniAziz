@@ -1852,11 +1852,16 @@ app.get("/api/tutors", async (_req, res) => {
       const hasSubjects = tutor.subjects && tutor.subjects.length > 0;
       const hasName = (tutor.name && tutor.name.trim()) ||
                       (tutor.user?.firstName && tutor.user.firstName.trim());
-      const hasBookingOption = tutor.onlineSessionAvailable === true ||
-                               tutor.physicalSessionAvailable === true;
+
+      // Check if tutor has at least one day with availability enabled
+      const hasAvailability = tutor.availability &&
+                             typeof tutor.availability === 'object' &&
+                             Object.values(tutor.availability).some(
+                               (day: any) => day?.isAvailable === true
+                             );
 
       // Only show tutors that meet all critical requirements
-      return hasPrice && hasSubjects && hasName && hasBookingOption;
+      return hasPrice && hasSubjects && hasName && hasAvailability;
     });
 
     // Update cache
