@@ -19,7 +19,13 @@ export function validateTutorProfile(tutor: any): TutorValidationResult {
   // === CRITICAL MISSING DATA (blocks public visibility) ===
 
   // 1. Price per hour must be greater than 0
-  if (!tutor.pricePerHour || tutor.pricePerHour === 0 || tutor.hourlyRate === 0) {
+  // Check EITHER base hourly rate OR per-subject pricing
+  const hasBasePrice = (tutor.pricePerHour && tutor.pricePerHour > 0) || (tutor.hourlyRate && tutor.hourlyRate > 0);
+  const hasSubjectPricing = tutor.subjectPricing &&
+                           typeof tutor.subjectPricing === 'object' &&
+                           Object.values(tutor.subjectPricing).some((price: any) => price > 0);
+
+  if (!hasBasePrice && !hasSubjectPricing) {
     criticalMissing.push("pricePerHour");
   }
 

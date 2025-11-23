@@ -692,7 +692,27 @@ export default function TutorDashboard() {
                     <div className="flex justify-between">
                       <span>Hourly Rate:</span>
 <span className="font-medium">
-  {formatMoney((tutorProfile as any)?.hourlyRate ?? 0)}/hr
+  {(() => {
+    const profile = tutorProfile as any;
+    const baseRate = profile?.hourlyRate || profile?.pricePerHour || 0;
+    const subjectPricing = profile?.subjectPricing;
+
+    // If has per-subject pricing, show range
+    if (subjectPricing && typeof subjectPricing === 'object') {
+      const prices = Object.values(subjectPricing).filter((p: any) => p > 0) as number[];
+      if (prices.length > 0) {
+        const min = Math.min(...prices);
+        const max = Math.max(...prices);
+        if (min === max) {
+          return `${formatMoney(min)}/hr`;
+        }
+        return `${formatMoney(min)} - ${formatMoney(max)}/hr`;
+      }
+    }
+
+    // Otherwise show base rate
+    return `${formatMoney(baseRate)}/hr`;
+  })()}
 </span>
                     </div>
                     <div className="flex justify-between">
