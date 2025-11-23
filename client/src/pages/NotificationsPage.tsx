@@ -75,6 +75,7 @@ function getNotificationDestination(notification: Notification): string | null {
     case "LESSON_REPORT":
     case "NEW_LESSON_REPORT":
     case "LESSON_REPORT_AVAILABLE":
+    case "LESSON_REPORT_READY":
       return "/student-reports";
     case "SESSION_REQUESTED":
     case "SESSION_CONFIRMED":
