@@ -254,7 +254,14 @@ export default function AdminDashboard() {
 
   // Fetch analytics data
   const { data: analytics, isLoading: analyticsLoading } = useQuery<AnalyticsData>({
-    queryKey: ["/api/admin/analytics"],
+    queryKey: ["/api/admin/analytics", fromDate?.toISOString(), toDate?.toISOString()],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (fromDate) params.append("fromDate", fromDate.toISOString());
+      if (toDate) params.append("toDate", toDate.toISOString());
+      const url = `/api/admin/analytics${params.toString() ? `?${params.toString()}` : ""}`;
+      return apiRequest(url);
+    },
     enabled: isAdmin && currentTab === "analytics",
     staleTime: 60000, // Cache for 1 minute
   });

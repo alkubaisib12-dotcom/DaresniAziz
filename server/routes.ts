@@ -1100,18 +1100,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin analytics endpoint
-  app.get("/api/admin/analytics", requireUser, requireAdmin, async (_req, res) => {
+  app.get("/api/admin/analytics", requireUser, requireAdmin, async (req, res) => {
     try {
       const now = new Date();
       const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
+      // Get date range from query parameters
+      const fromDateParam = req.query.fromDate as string | undefined;
+      const toDateParam = req.query.toDate as string | undefined;
+      const fromDate = fromDateParam ? new Date(fromDateParam) : undefined;
+      const toDate = toDateParam ? new Date(toDateParam) : undefined;
+
+      // Helper to check if a date is in range
+      const isInDateRange = (dateValue: any): boolean => {
+        if (!fromDate && !toDate) return true;
+        const date = dateValue?.toDate ? dateValue.toDate() : new Date(dateValue);
+        if (fromDate && date < fromDate) return false;
+        if (toDate && date > toDate) return false;
+        return true;
+      };
+
       // Get all users with timestamps
       const usersSnap = await fdb!.collection("users").get();
-      const users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+      let users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+
+      // Filter users by date range
+      if (fromDate || toDate) {
+        users = users.filter(u => isInDateRange(u.createdAt));
+      }
 
       // Get all sessions
       const sessionsSnap = await fdb!.collection("tutoring_sessions").get();
-      const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+      let sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+
+      // Filter sessions by date range (using createdAt or scheduledAt)
+      if (fromDate || toDate) {
+        sessions = sessions.filter(s => isInDateRange(s.createdAt || s.scheduledAt));
+      }
 
       // Get all tutor profiles for subjects
       const tutorProfiles = await listCollection<any>("tutor_profiles");
