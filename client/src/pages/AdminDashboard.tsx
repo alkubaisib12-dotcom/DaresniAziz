@@ -73,6 +73,7 @@ interface TutorProfile {
     bio: string;
     phone: string;
     hourlyRate: number;
+    subjectPricing?: Record<string, number>; // subject-specific pricing
     experience: string;
     education: string;
     isVerified: boolean;
@@ -243,6 +244,33 @@ export default function AdminDashboard() {
     const date = dateString instanceof Date ? dateString : new Date(dateString);
     if (isNaN(date.getTime())) return "Invalid Date";
     return date.toLocaleString();
+  };
+
+  // Helper function to get tutor pricing display
+  const getTutorPricing = (tutor: TutorProfile): string => {
+    const { subjectPricing, hourlyRate } = tutor.profile;
+
+    // If subjectPricing exists and has values, use it
+    if (subjectPricing && Object.keys(subjectPricing).length > 0) {
+      const prices = Object.values(subjectPricing).filter(p => p > 0);
+      if (prices.length === 0) return "Not set";
+
+      const minPrice = Math.min(...prices);
+      const maxPrice = Math.max(...prices);
+
+      if (minPrice === maxPrice) {
+        return formatMoney(minPrice) + "/hour";
+      } else {
+        return `${formatMoney(minPrice)} - ${formatMoney(maxPrice)}/hour`;
+      }
+    }
+
+    // Fallback to hourlyRate (deprecated field)
+    if (hourlyRate && hourlyRate > 0) {
+      return formatMoney(hourlyRate) + "/hour";
+    }
+
+    return "Not set";
   };
 
   // Redirect away if not admin (runs after first render)
@@ -1042,9 +1070,8 @@ export default function AdminDashboard() {
                           <div>
                             <p className="font-medium text-muted-foreground">Hourly Rate</p>
                             <p className="text-lg font-semibold">
-  {formatMoney(tutor.profile.hourlyRate)}/hr
-</p>
-
+                              {getTutorPricing(tutor)}
+                            </p>
                           </div>
                           <div>
                             <p className="font-medium text-muted-foreground">Phone</p>
@@ -1341,10 +1368,9 @@ export default function AdminDashboard() {
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4 text-sm">
                         <div>
                           <p className="font-medium">Hourly Rate</p>
-                         <p className="text-muted-foreground">
-  {formatMoney(tutor.profile.hourlyRate)}/hour
-</p>
-
+                          <p className="text-muted-foreground">
+                            {getTutorPricing(tutor)}
+                          </p>
                         </div>
                         <div>
                           <p className="font-medium">Phone</p>
@@ -1569,9 +1595,8 @@ export default function AdminDashboard() {
                       Hourly Rate
                     </p>
                     <p className="text-base font-bold text-[#9B1B30]">
-  {formatMoney(selectedTutor.profile.hourlyRate)}/hour
-</p>
-
+                      {getTutorPricing(selectedTutor)}
+                    </p>
                   </div>
                   <div>
                     <p className="font-medium text-sm text-muted-foreground">
