@@ -175,6 +175,11 @@ export default function NotificationsPage() {
         return "Recently";
       }
 
+      // Validate the date before formatting
+      if (isNaN(date.getTime())) {
+        return "Recently";
+      }
+
       return format(date, "MMM dd, yyyy 'at' h:mm a");
     } catch {
       return "Recently";

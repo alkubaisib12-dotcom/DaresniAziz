@@ -1383,7 +1383,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get all unread notifications for this admin
       const unreadSnap = await fdb!.collection("notifications")
-        .where("recipientId", "==", userId)
+        .where("userId", "==", userId)
         .where("isRead", "==", false)
         .get();
 
