@@ -1366,14 +1366,9 @@ export default function AdminDashboard() {
                             </Avatar>
                             <div className="flex-1 min-w-0">
                               <p className="font-semibold truncate">{tutor.name}</p>
-                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                {tutor.averageRating > 0 && (
-                                  <span className="flex items-center gap-1">
-                                    <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                                    {tutor.averageRating.toFixed(1)} ({tutor.totalReviews})
-                                  </span>
-                                )}
-                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                {tutor.completedSessions} of {tutor.totalSessions} completed
+                              </p>
                             </div>
                           </div>
 
@@ -1395,15 +1390,18 @@ export default function AdminDashboard() {
                                 BHD {tutor.revenue.toFixed(2)}
                               </p>
                             </div>
-                            {tutor.averageRating > 0 && tutorSortBy === 'rating' && (
-                              <div className="text-center">
-                                <p className="text-xs text-muted-foreground">Rating</p>
-                                <p className="font-semibold text-[#9B1B30] text-lg flex items-center gap-1">
-                                  <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                            <div className="text-center">
+                              <p className="text-xs text-muted-foreground">Rating</p>
+                              {tutor.averageRating > 0 ? (
+                                <p className={`font-semibold flex items-center gap-1 justify-center ${tutorSortBy === 'rating' ? 'text-[#9B1B30] text-lg' : ''}`}>
+                                  <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
                                   {tutor.averageRating.toFixed(1)}
+                                  <span className="text-xs text-muted-foreground">({tutor.totalReviews})</span>
                                 </p>
-                              </div>
-                            )}
+                              ) : (
+                                <p className="text-xs text-muted-foreground">No ratings</p>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}
