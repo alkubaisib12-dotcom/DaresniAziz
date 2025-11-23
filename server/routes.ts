@@ -1252,8 +1252,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .filter(t => t.totalSessions > 0); // Only tutors with at least 1 session
 
       // Calculate normalized scores for overall ranking
+      // Find max values for normalization
       const maxRevenue = Math.max(...tutorPerformance.map(t => t.revenue), 1);
       const maxSessions = Math.max(...tutorPerformance.map(t => t.totalSessions), 1);
+      const maxReviewCount = Math.max(...tutorPerformance.map(t => t.totalReviews), 1);
 
       const rankedTutors = tutorPerformance.map(t => {
         // Only rank tutors with at least one completed session
@@ -1262,20 +1264,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         // Normalize values to 0-100 scale
-        const normalizedRevenue = (t.revenue / maxRevenue) * 100;
         const normalizedSessions = (t.totalSessions / maxSessions) * 100;
-        const normalizedRating = (t.averageRating / 5) * 100;
-        const normalizedCompletion = t.completionRate;
+        const normalizedRevenue = (t.revenue / maxRevenue) * 100;
+        const normalizedCompletion = t.completionRate; // Already 0-100
 
-        // Weighted score: 30% revenue, 25% completion, 25% rating, 20% sessions
+        // Rating score: combine average rating with review count confidence
+        // More reviews = higher confidence, boost the score
+        const ratingScore = (t.averageRating / 5) * 100; // 0-100 from rating
+        const reviewConfidence = (t.totalReviews / maxReviewCount) * 100; // 0-100 from review count
+        // Weighted combination: 70% rating quality, 30% review volume
+        const normalizedRating = (ratingScore * 0.7) + (reviewConfidence * 0.3);
+
+        // Final weighted score based on real-world tutor performance:
+        // - Sessions matter most (40%) - student demand & activity
+        // - Revenue second (30%) - earnings & value
+        // - Ratings third (20%) - quality & student satisfaction
+        // - Completion least (10%) - reliability (low weight as cancellations often student-caused)
         const score = (
+          (normalizedSessions * 0.40) +
           (normalizedRevenue * 0.30) +
-          (normalizedCompletion * 0.25) +
-          (normalizedRating * 0.25) +
-          (normalizedSessions * 0.20)
+          (normalizedRating * 0.20) +
+          (normalizedCompletion * 0.10)
         );
 
-        return { ...t, score };
+        return { ...t, score: Math.round(score * 100) / 100 };
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 10); // Top 10 tutors
