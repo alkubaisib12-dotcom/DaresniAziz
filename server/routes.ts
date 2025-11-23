@@ -1845,10 +1845,6 @@ app.get("/api/tutors", async (_req, res) => {
       };
     });
 
-    // No filtering - show all tutors regardless of profile completeness
-    // Profile validation only shows yellow warnings in tutor dashboard
-    console.log(`[Tutor List] Total tutors: ${tutorsWithSubjects.length}, All visible (no filtering)`);
-
     // Update cache
     cachedTutors = tutorsWithSubjects;
     cachedTutorsFetchedAt = now;
