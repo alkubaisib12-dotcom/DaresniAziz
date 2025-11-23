@@ -1207,6 +1207,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
         .slice(0, 10);
 
+      // Calculate tutor performance
+      const tutorUsers = users.filter(u => u.role === 'tutor');
+      const tutorUsersMap = new Map(tutorUsers.map(u => [u.id, u]));
+
+      // Get all reviews for ratings
+      const reviewsSnap = await fdb!.collection("tutor_reviews").get();
+      const reviews = reviewsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+
+      const tutorPerformance = tutorProfiles
+        .filter(tp => tp.isVerified && tutorUsersMap.has(tp.userId))
+        .map(tutorProfile => {
+          const tutorUser = tutorUsersMap.get(tutorProfile.userId);
+          const tutorSessions = sessions.filter(s => s.tutorId === tutorProfile.id);
+          const completedTutorSessions = tutorSessions.filter(s => s.status === 'completed');
+          const tutorReviews = reviews.filter(r => r.tutorId === tutorProfile.id);
+
+          const totalSessions = tutorSessions.length;
+          const completedCount = completedTutorSessions.length;
+          const completionRate = totalSessions > 0 ? Math.round((completedCount / totalSessions) * 100) : 0;
+
+          const avgRating = tutorReviews.length > 0
+            ? tutorReviews.reduce((sum, r) => sum + r.rating, 0) / tutorReviews.length
+            : 0;
+
+          const revenue = completedTutorSessions.reduce((sum, s) => {
+            const price = s.priceCents ? s.priceCents / 100 : (s.price || 0);
+            return sum + price;
+          }, 0);
+
+          return {
+            tutorId: tutorProfile.id,
+            userId: tutorProfile.userId,
+            name: tutorUser ? `${tutorUser.firstName || ''} ${tutorUser.lastName || ''}`.trim() : 'Unknown',
+            profileImageUrl: tutorUser?.profileImageUrl || null,
+            totalSessions,
+            completedSessions: completedCount,
+            completionRate,
+            averageRating: Math.round(avgRating * 10) / 10,
+            totalReviews: tutorReviews.length,
+            revenue: Math.round(revenue * 100) / 100,
+          };
+        })
+        .filter(t => t.totalSessions > 0) // Only tutors with at least 1 session
+        .sort((a, b) => {
+          // Sort by a composite score: completion rate + rating + sessions
+          const scoreA = (a.completionRate * 0.3) + (a.averageRating * 20 * 0.4) + (a.totalSessions * 0.3);
+          const scoreB = (b.completionRate * 0.3) + (b.averageRating * 20 * 0.4) + (b.totalSessions * 0.3);
+          return scoreB - scoreA;
+        })
+        .slice(0, 10); // Top 10 tutors
+
       res.json({
         userGrowth,
         sessionStats,
@@ -1225,6 +1276,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: s.status,
           scheduledAt: s.scheduledAt?.toDate ? s.scheduledAt.toDate().toISOString() : s.scheduledAt,
         })),
+        topPerformingTutors: tutorPerformance,
       });
     } catch (error) {
       console.error("Error fetching admin analytics:", error);

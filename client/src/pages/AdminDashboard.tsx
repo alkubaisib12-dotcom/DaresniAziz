@@ -6,6 +6,7 @@ import { formatMoney } from "@/lib/currency";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/components/AuthProvider";
@@ -35,6 +36,8 @@ import {
   CalendarIcon,
   Filter,
   X,
+  Trophy,
+  Star,
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import {
@@ -129,6 +132,19 @@ interface TutorSessions {
   };
 }
 
+interface TutorPerformance {
+  tutorId: string;
+  userId: string;
+  name: string;
+  profileImageUrl: string | null;
+  totalSessions: number;
+  completedSessions: number;
+  completionRate: number;
+  averageRating: number;
+  totalReviews: number;
+  revenue: number;
+}
+
 interface AnalyticsData {
   userGrowth: Array<{ date: string; students: number; tutors: number }>;
   sessionStats: {
@@ -153,6 +169,7 @@ interface AnalyticsData {
     status: string;
     scheduledAt: string;
   }>;
+  topPerformingTutors: TutorPerformance[];
 }
 
 export default function AdminDashboard() {
@@ -1256,6 +1273,76 @@ export default function AdminDashboard() {
                         <Bar dataKey="sessions" fill="#9B1B30" name="Sessions" />
                       </BarChart>
                     </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Top Performing Tutors */}
+              {analytics.topPerformingTutors && analytics.topPerformingTutors.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Trophy className="h-5 w-5 text-yellow-500" />
+                      Top Performing Tutors
+                    </CardTitle>
+                    <CardDescription>
+                      Best performing tutors based on completion rate, ratings, and sessions
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {analytics.topPerformingTutors.map((tutor, index) => (
+                        <div
+                          key={tutor.tutorId}
+                          className="flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+                        >
+                          <div className="flex items-center gap-4 flex-1">
+                            {/* Rank Badge */}
+                            <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ${
+                              index === 0 ? 'bg-yellow-100 text-yellow-700' :
+                              index === 1 ? 'bg-gray-100 text-gray-700' :
+                              index === 2 ? 'bg-orange-100 text-orange-700' :
+                              'bg-blue-50 text-blue-700'
+                            }`}>
+                              {index + 1}
+                            </div>
+
+                            {/* Avatar and Name */}
+                            <Avatar className="h-12 w-12">
+                              <AvatarImage src={tutor.profileImageUrl || "/images/daresni-logo.svg"} alt={tutor.name} />
+                              <AvatarFallback>{tutor.name.charAt(0)}</AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold truncate">{tutor.name}</p>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                {tutor.averageRating > 0 && (
+                                  <span className="flex items-center gap-1">
+                                    <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                                    {tutor.averageRating.toFixed(1)} ({tutor.totalReviews})
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Metrics */}
+                          <div className="flex items-center gap-6 text-sm">
+                            <div className="text-center">
+                              <p className="text-xs text-muted-foreground">Sessions</p>
+                              <p className="font-semibold">{tutor.totalSessions}</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-xs text-muted-foreground">Completion</p>
+                              <p className="font-semibold text-green-600">{tutor.completionRate}%</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-xs text-muted-foreground">Revenue</p>
+                              <p className="font-semibold">BHD {tutor.revenue.toFixed(2)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </CardContent>
                 </Card>
               )}
