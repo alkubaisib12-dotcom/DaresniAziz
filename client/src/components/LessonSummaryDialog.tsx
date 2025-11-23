@@ -13,8 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { updateTutorNotes, generateAISummary } from "@/lib/api";
+import { updateTutorNotes, generateAISummary, generateSessionQuiz } from "@/lib/api";
 import type { ApiSession } from "@/lib/api";
+import { SessionQuizDialog } from "./SessionQuizDialog";
 
 interface LessonSummaryDialogProps {
   session: ApiSession;
@@ -32,6 +33,7 @@ export function LessonSummaryDialog({
   const queryClient = useQueryClient();
   const [notes, setNotes] = useState(session.tutorNotes || "");
   const [error, setError] = useState("");
+  const [showQuizDialog, setShowQuizDialog] = useState(false);
 
   const updateNotesMutation = useMutation({
     mutationFn: (tutorNotes: string) => updateTutorNotes(session.id, tutorNotes),
@@ -55,6 +57,19 @@ export function LessonSummaryDialog({
     },
     onError: (err: any) => {
       setError(err.message || "Failed to generate summary");
+    },
+  });
+
+  const generateQuizMutation = useMutation({
+    mutationFn: () => generateSessionQuiz(session.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tutor/sessions"] });
+      setError("");
+      alert("Quiz generated successfully! Students can now take the quiz.");
+    },
+    onError: (err: any) => {
+      setError(err.message || "Failed to generate quiz");
     },
   });
 
@@ -196,10 +211,28 @@ export function LessonSummaryDialog({
             )}
           </div>
 
-          <DialogFooter>
-            <Button onClick={() => onOpenChange(false)}>Close</Button>
+          <DialogFooter className="gap-2">
+            <Button onClick={() => onOpenChange(false)} variant="outline">
+              Close
+            </Button>
+            {session.aiSummary && (
+              <Button
+                onClick={() => setShowQuizDialog(true)}
+                className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+              >
+                <i className="fas fa-clipboard-question mr-2" />
+                Take Improvement Quiz
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
+
+        {/* Quiz Dialog */}
+        <SessionQuizDialog
+          sessionId={session.id}
+          open={showQuizDialog}
+          onOpenChange={setShowQuizDialog}
+        />
       </Dialog>
     );
   }
@@ -347,6 +380,25 @@ export function LessonSummaryDialog({
               </>
             )}
           </Button>
+          {session.aiSummary && (
+            <Button
+              onClick={() => generateQuizMutation.mutate()}
+              disabled={generateQuizMutation.isPending}
+              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+            >
+              {generateQuizMutation.isPending ? (
+                <>
+                  <i className="fas fa-spinner fa-spin mr-2" />
+                  Generating Quiz...
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-clipboard-question mr-2" />
+                  Generate Quiz
+                </>
+              )}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

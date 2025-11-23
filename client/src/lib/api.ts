@@ -86,6 +86,67 @@ export async function generateAISummary(sessionId: string) {
   });
 }
 
+// ---- Quiz Functions ----
+export type QuizQuestion = {
+  question: string;
+  type: "multiple_choice" | "true_false";
+  options?: string[];
+  correctAnswer: string;
+  explanation: string;
+  topic: string;
+};
+
+export type SessionQuiz = {
+  id: string;
+  sessionId: string;
+  questions: QuizQuestion[];
+  focusAreas: string[];
+  difficulty: "easy" | "medium" | "hard";
+  createdAt: any;
+  aiGenerated: boolean;
+};
+
+export type QuizAttempt = {
+  id: string;
+  quizId: string;
+  sessionId: string;
+  studentId: string;
+  answers: Record<number, string>;
+  score: number;
+  correctCount: number;
+  totalQuestions: number;
+  detailedResults: Array<{
+    questionIndex: number;
+    question: string;
+    studentAnswer: string;
+    correctAnswer: string;
+    isCorrect: boolean;
+    explanation: string;
+    topic: string;
+  }>;
+  completedAt: any;
+};
+
+export async function generateSessionQuiz(sessionId: string) {
+  return api<SessionQuiz>(`/api/sessions/${sessionId}/generate-quiz`, {
+    method: "POST",
+  });
+}
+
+export async function getSessionQuiz(sessionId: string) {
+  return api<{ quiz: SessionQuiz; attempt: QuizAttempt | null }>(`/api/sessions/${sessionId}/quiz`, {
+    method: "GET",
+  });
+}
+
+export async function submitQuizAnswers(sessionId: string, answers: Record<number, string>) {
+  return api<QuizAttempt>(`/api/sessions/${sessionId}/quiz/submit`, {
+    method: "POST",
+    body: JSON.stringify({ answers }),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 // ---- Notifications ----
 export type ApiNotification = {
   id: string;
