@@ -330,8 +330,7 @@ export default function Landing() {
                           alt={`${tutorName} profile`}
                           className="w-16 h-16 rounded-full object-cover"
                           onError={(e) => {
-                            e.currentTarget.src =
-                              "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=150&h=150";
+                            e.currentTarget.src = "/images/daresni-logo.svg";
                           }}
                         />
                         <div className="flex-1">

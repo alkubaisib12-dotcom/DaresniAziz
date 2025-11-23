@@ -668,7 +668,7 @@ export default function TutorDashboard() {
                     <img
                       src={
                         user.profileImageUrl ||
-                        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&h=100"
+                        "/images/daresni-logo.svg"
                       }
                       alt={user.firstName || "User"}
                       className="w-20 h-20 rounded-full object-cover mx-auto mb-3"

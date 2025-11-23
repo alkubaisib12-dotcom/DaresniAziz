@@ -1,0 +1,24 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="100" fill="#9B1B30"/>
+
+  <!-- Simple icon representing education/tutoring -->
+  <g transform="translate(100, 80)">
+    <!-- Three people silhouettes -->
+    <!-- Left person (darker blue) -->
+    <circle cx="-35" cy="0" r="12" fill="#0B3559"/>
+    <path d="M -35 12 L -35 12 C -35 12 -50 30 -50 45 L -20 45 C -20 30 -35 12 -35 12 Z" fill="#0B3559"/>
+
+    <!-- Center person (white) -->
+    <circle cx="0" cy="-5" r="14" fill="white"/>
+    <path d="M 0 9 L 0 9 C 0 9 -18 30 -18 48 L 18 48 C 18 30 0 9 0 9 Z" fill="white"/>
+
+    <!-- Right person (darker blue) -->
+    <circle cx="35" cy="0" r="12" fill="#0B3559"/>
+    <path d="M 35 12 L 35 12 C 35 12 20 30 20 45 L 50 45 C 50 30 35 12 35 12 Z" fill="#0B3559"/>
+  </g>
+
+  <!-- Text "Daresni" -->
+  <text x="100" y="150" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="white" text-anchor="middle">Daresni</text>
+  <text x="100" y="175" font-family="Arial, sans-serif" font-size="14" fill="white" text-anchor="middle">Connect . Learn</text>
+</svg>
