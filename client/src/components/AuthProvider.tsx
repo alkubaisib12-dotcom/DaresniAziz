@@ -125,13 +125,37 @@ export function AuthProvider({ children }: AuthProviderProps) {
     window.fetch = async (url, options: RequestInit = {}) => {
       if (typeof url === "string" && url.startsWith("/api/") && firebaseUser) {
         try {
+          // Get token (uses cached token if still valid)
           const token = await firebaseUser.getIdToken();
           options.headers = {
             ...options.headers,
             Authorization: `Bearer ${token}`,
           };
+
+          // Make the request
+          const response = await originalFetch(url, options);
+
+          // If we get a 401, the token might be expired - try refreshing and retrying
+          if (response.status === 401) {
+            try {
+              // Force refresh the token
+              const freshToken = await firebaseUser.getIdToken(true);
+              options.headers = {
+                ...options.headers,
+                Authorization: `Bearer ${freshToken}`,
+              };
+              // Retry the request with fresh token
+              return await originalFetch(url, options);
+            } catch (refreshError) {
+              console.error("Error refreshing token:", refreshError);
+              return response; // Return original 401 response
+            }
+          }
+
+          return response;
         } catch (error) {
           console.error("Error getting auth token for API call:", error);
+          return originalFetch(url, options);
         }
       }
 

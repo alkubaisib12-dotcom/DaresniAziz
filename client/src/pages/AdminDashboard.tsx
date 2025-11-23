@@ -9,6 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/components/AuthProvider";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format } from "date-fns";
 
 import {
   Bell,
@@ -29,6 +32,9 @@ import {
   BarChart3,
   Activity,
   Calendar,
+  CalendarIcon,
+  Filter,
+  X,
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import {
@@ -67,6 +73,7 @@ interface TutorProfile {
     bio: string;
     phone: string;
     hourlyRate: number;
+    subjectPricing?: Record<string, number>; // subject-specific pricing
     experience: string;
     education: string;
     isVerified: boolean;
@@ -167,6 +174,157 @@ export default function AdminDashboard() {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [selectedTutorForSessions, setSelectedTutorForSessions] = useState<TutorProfile | null>(null);
 
+  // Date range filter state
+  type DatePreset = "all" | "today" | "week" | "month" | "year" | "custom";
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [fromDate, setFromDate] = useState<Date | undefined>(undefined);
+  const [toDate, setToDate] = useState<Date | undefined>(undefined);
+
+  // Date range filter helpers
+  const setDateRange = (preset: DatePreset) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    setDatePreset(preset);
+
+    switch (preset) {
+      case "all":
+        setFromDate(undefined);
+        setToDate(undefined);
+        break;
+      case "today":
+        setFromDate(today);
+        setToDate(new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1));
+        break;
+      case "week":
+        const weekAgo = new Date(today);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        setFromDate(weekAgo);
+        setToDate(now);
+        break;
+      case "month":
+        const monthAgo = new Date(today);
+        monthAgo.setMonth(monthAgo.getMonth() - 1);
+        setFromDate(monthAgo);
+        setToDate(now);
+        break;
+      case "year":
+        const yearAgo = new Date(today);
+        yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+        setFromDate(yearAgo);
+        setToDate(now);
+        break;
+      case "custom":
+        // Keep existing dates for custom range
+        break;
+    }
+  };
+
+  const isDateInRange = (dateString: string) => {
+    if (!fromDate && !toDate) return true;
+
+    const date = new Date(dateString);
+    if (fromDate && date < fromDate) return false;
+    if (toDate && date > toDate) return false;
+
+    return true;
+  };
+
+  // Helper function to safely format dates
+  const formatDate = (dateValue: any): string => {
+    if (!dateValue) return "N/A";
+
+    try {
+      let date: Date;
+
+      // Handle Firestore Timestamp objects
+      if (dateValue?.toDate && typeof dateValue.toDate === 'function') {
+        date = dateValue.toDate();
+      }
+      // Handle Firestore Timestamp with _seconds
+      else if (dateValue?._seconds) {
+        date = new Date(dateValue._seconds * 1000);
+      }
+      // Handle Date objects
+      else if (dateValue instanceof Date) {
+        date = dateValue;
+      }
+      // Handle string/number
+      else {
+        date = new Date(dateValue);
+      }
+
+      // Validate the date
+      if (isNaN(date.getTime())) return "N/A";
+
+      return date.toLocaleDateString();
+    } catch (error) {
+      console.error("Error formatting date:", error, dateValue);
+      return "N/A";
+    }
+  };
+
+  // Helper function to safely format date and time
+  const formatDateTime = (dateValue: any): string => {
+    if (!dateValue) return "N/A";
+
+    try {
+      let date: Date;
+
+      // Handle Firestore Timestamp objects
+      if (dateValue?.toDate && typeof dateValue.toDate === 'function') {
+        date = dateValue.toDate();
+      }
+      // Handle Firestore Timestamp with _seconds
+      else if (dateValue?._seconds) {
+        date = new Date(dateValue._seconds * 1000);
+      }
+      // Handle Date objects
+      else if (dateValue instanceof Date) {
+        date = dateValue;
+      }
+      // Handle string/number
+      else {
+        date = new Date(dateValue);
+      }
+
+      // Validate the date
+      if (isNaN(date.getTime())) return "N/A";
+
+      return date.toLocaleString();
+    } catch (error) {
+      console.error("Error formatting date:", error, dateValue);
+      return "N/A";
+    }
+  };
+
+  // Helper function to get tutor pricing display
+  const getTutorPricing = (tutor: TutorProfile): string => {
+    const { subjectPricing, hourlyRate } = tutor.profile;
+
+    // If subjectPricing exists and has values, use it
+    if (subjectPricing && Object.keys(subjectPricing).length > 0) {
+      const prices = Object.values(subjectPricing).filter(p => p > 0);
+      if (prices.length === 0) return "Not set";
+
+      const minPrice = Math.min(...prices);
+      const maxPrice = Math.max(...prices);
+
+      if (minPrice === maxPrice) {
+        return formatMoney(minPrice) + "/hour";
+      } else {
+        return `${formatMoney(minPrice)} - ${formatMoney(maxPrice)}/hour`;
+      }
+    }
+
+    // Fallback to hourlyRate (deprecated field)
+    if (hourlyRate && hourlyRate > 0) {
+      return formatMoney(hourlyRate) + "/hour";
+    }
+
+    return "Not set";
+  };
+
   // Redirect away if not admin (runs after first render)
   useEffect(() => {
     if (!authLoading && !isAdmin) {
@@ -176,7 +334,14 @@ export default function AdminDashboard() {
 
   // Fetch analytics data
   const { data: analytics, isLoading: analyticsLoading } = useQuery<AnalyticsData>({
-    queryKey: ["/api/admin/analytics"],
+    queryKey: ["/api/admin/analytics", fromDate?.toISOString(), toDate?.toISOString()],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (fromDate) params.append("fromDate", fromDate.toISOString());
+      if (toDate) params.append("toDate", toDate.toISOString());
+      const url = `/api/admin/analytics${params.toString() ? `?${params.toString()}` : ""}`;
+      return apiRequest(url);
+    },
     enabled: isAdmin && currentTab === "analytics",
     staleTime: 60000, // Cache for 1 minute
   });
@@ -414,8 +579,16 @@ export default function AdminDashboard() {
     }
   };
 
+  // Apply date filters to all data
+  const filteredNotifications = notifications.filter((n) => isDateInRange(n.createdAt));
+  const filteredPendingTutors = pendingTutors.filter((t) => isDateInRange(t.profile.createdAt));
+  const filteredStudents = students.filter((s) => isDateInRange(s.createdAt));
+  const filteredAllTutors = allTutors.filter((t) => isDateInRange(t.profile.createdAt));
+  const filteredAdminUsers = adminUsers.filter((a) => isDateInRange(a.createdAt));
+
+  // Count ALL unread notifications (not just filtered) for the "Mark All as Read" button
   const unreadCount = notifications.filter((n) => !n.isRead).length;
-  const pendingCount = pendingTutors.length;
+  const pendingCount = filteredPendingTutors.length;
 
   // IMPORTANT: this comes *after* all hooks, so hooks order is stable
   if (authLoading || !isAdmin) {
@@ -434,6 +607,122 @@ export default function AdminDashboard() {
           Manage platform users, verify tutors, and monitor system activity.
         </p>
       </div>
+
+      {/* Date Range Filter */}
+      <Card className="mb-6">
+        <CardContent className="p-4">
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+            <div className="flex items-center gap-2">
+              <Filter className="h-5 w-5 text-muted-foreground" />
+              <span className="font-medium">Filter by Date:</span>
+            </div>
+
+            {/* Preset Buttons */}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={datePreset === "all" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDateRange("all")}
+              >
+                All Time
+              </Button>
+              <Button
+                variant={datePreset === "today" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDateRange("today")}
+              >
+                Today
+              </Button>
+              <Button
+                variant={datePreset === "week" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDateRange("week")}
+              >
+                Last 7 Days
+              </Button>
+              <Button
+                variant={datePreset === "month" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDateRange("month")}
+              >
+                Last 30 Days
+              </Button>
+              <Button
+                variant={datePreset === "year" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDateRange("year")}
+              >
+                Last Year
+              </Button>
+            </div>
+
+            {/* Custom Date Range Pickers */}
+            <div className="flex items-center gap-2 ml-auto">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={datePreset === "custom" ? "border-primary" : ""}
+                  >
+                    <CalendarIcon className="h-4 w-4 mr-2" />
+                    {fromDate ? format(fromDate, "MMM dd, yyyy") : "From Date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    mode="single"
+                    selected={fromDate}
+                    onSelect={(date) => {
+                      setFromDate(date);
+                      setDatePreset("custom");
+                    }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+
+              <span className="text-muted-foreground">to</span>
+
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={datePreset === "custom" ? "border-primary" : ""}
+                  >
+                    <CalendarIcon className="h-4 w-4 mr-2" />
+                    {toDate ? format(toDate, "MMM dd, yyyy") : "To Date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    mode="single"
+                    selected={toDate}
+                    onSelect={(date) => {
+                      setToDate(date);
+                      setDatePreset("custom");
+                    }}
+                    initialFocus
+                    disabled={(date) => fromDate ? date < fromDate : false}
+                  />
+                </PopoverContent>
+              </Popover>
+
+              {(fromDate || toDate) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setDateRange("all")}
+                  className="h-8 w-8 p-0"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -462,7 +751,7 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Students</p>
-                <p className="text-2xl font-bold">{students.length}</p>
+                <p className="text-2xl font-bold">{filteredStudents.length}</p>
               </div>
               <BookOpen className="h-8 w-8 text-blue-600" />
             </div>
@@ -475,7 +764,7 @@ export default function AdminDashboard() {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Verified Tutors</p>
                 <p className="text-2xl font-bold">
-                  {allTutors.filter((t) => t.profile.isVerified).length}
+                  {filteredAllTutors.filter((t) => t.profile.isVerified).length}
                 </p>
               </div>
               <GraduationCap className="h-8 w-8 text-[#9B1B30]" />
@@ -800,7 +1089,7 @@ export default function AdminDashboard() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {pendingTutors.map((tutor) => (
+                  {filteredPendingTutors.map((tutor) => (
                     <Card
                       key={tutor.profile.id}
                       className="border-2 border-orange-200 bg-orange-50/50"
@@ -833,9 +1122,8 @@ export default function AdminDashboard() {
                           <div>
                             <p className="font-medium text-muted-foreground">Hourly Rate</p>
                             <p className="text-lg font-semibold">
-  {formatMoney(tutor.profile.hourlyRate)}/hr
-</p>
-
+                              {getTutorPricing(tutor)}
+                            </p>
                           </div>
                           <div>
                             <p className="font-medium text-muted-foreground">Phone</p>
@@ -848,9 +1136,7 @@ export default function AdminDashboard() {
                           <div>
                             <p className="font-medium text-muted-foreground">Applied</p>
                             <p>
-                              {new Date(
-                                tutor.profile.createdAt,
-                              ).toLocaleDateString()}
+                              {formatDate(tutor.profile.createdAt)}
                             </p>
                           </div>
                         </div>
@@ -938,14 +1224,14 @@ export default function AdminDashboard() {
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#9B1B30]" />
                 </div>
-              ) : notifications.length === 0 ? (
+              ) : filteredNotifications.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Bell className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
                   <p>No notifications yet</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {notifications.map((notification) => (
+                  {filteredNotifications.map((notification) => (
                     <div
                       key={notification.id}
                       className={`p-4 rounded-lg border ${
@@ -969,7 +1255,7 @@ export default function AdminDashboard() {
                             {notification.body}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {new Date(notification.createdAt).toLocaleString()}
+                            {formatDateTime(notification.createdAt)}
                           </p>
                         </div>
                         {!notification.isRead && (
@@ -1010,14 +1296,14 @@ export default function AdminDashboard() {
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#9B1B30]" />
                 </div>
-              ) : students.length === 0 ? (
+              ) : filteredStudents.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <BookOpen className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
                   <p>No students registered yet</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {students.map((student) => (
+                  {filteredStudents.map((student) => (
                     <div
                       key={student.id}
                       className="p-4 border rounded-lg flex items-center justify-between hover:bg-muted/50 transition-colors"
@@ -1034,8 +1320,7 @@ export default function AdminDashboard() {
                             {student.email}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Joined{" "}
-                            {new Date(student.createdAt).toLocaleDateString()}
+                            Joined {formatDate(student.createdAt)}
                           </p>
                         </div>
                       </div>
@@ -1087,14 +1372,14 @@ export default function AdminDashboard() {
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#9B1B30]" />
                 </div>
-              ) : allTutors.length === 0 ? (
+              ) : filteredAllTutors.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <GraduationCap className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
                   <p>No tutors registered yet</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {allTutors.map((tutor) => (
+                  {filteredAllTutors.map((tutor) => (
                     <div
                       key={tutor.profile.id}
                       className="p-4 border rounded-lg"
@@ -1112,10 +1397,7 @@ export default function AdminDashboard() {
                               {tutor.user?.email}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              Joined{" "}
-                              {new Date(
-                                tutor.profile.createdAt,
-                              ).toLocaleDateString()}
+                              Joined {formatDate(tutor.profile.createdAt)}
                             </p>
                           </div>
                         </div>
@@ -1138,10 +1420,9 @@ export default function AdminDashboard() {
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4 text-sm">
                         <div>
                           <p className="font-medium">Hourly Rate</p>
-                         <p className="text-muted-foreground">
-  {formatMoney(tutor.profile.hourlyRate)}/hour
-</p>
-
+                          <p className="text-muted-foreground">
+                            {getTutorPricing(tutor)}
+                          </p>
                         </div>
                         <div>
                           <p className="font-medium">Phone</p>
@@ -1227,14 +1508,14 @@ export default function AdminDashboard() {
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#9B1B30]" />
                 </div>
-              ) : adminUsers.length === 0 ? (
+              ) : filteredAdminUsers.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Shield className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
                   <p>No admin accounts found</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {adminUsers.map((admin) => (
+                  {filteredAdminUsers.map((admin) => (
                     <div
                       key={admin.id}
                       className="p-4 border rounded-lg flex items-center justify-between"
@@ -1251,8 +1532,7 @@ export default function AdminDashboard() {
                             {admin.email}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Joined{" "}
-                            {new Date(admin.createdAt).toLocaleDateString()}
+                            Joined {formatDate(admin.createdAt)}
                           </p>
                         </div>
                       </div>
@@ -1367,18 +1647,15 @@ export default function AdminDashboard() {
                       Hourly Rate
                     </p>
                     <p className="text-base font-bold text-[#9B1B30]">
-  {formatMoney(selectedTutor.profile.hourlyRate)}/hour
-</p>
-
+                      {getTutorPricing(selectedTutor)}
+                    </p>
                   </div>
                   <div>
                     <p className="font-medium text-sm text-muted-foreground">
                       Application Date
                     </p>
                     <p className="text-base">
-                      {new Date(
-                        selectedTutor.profile.createdAt,
-                      ).toLocaleDateString()}
+                      {formatDate(selectedTutor.profile.createdAt)}
                     </p>
                   </div>
                   <div>
@@ -1559,7 +1836,7 @@ export default function AdminDashboard() {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Joined</p>
                   <p className="text-base">
-                    {new Date(studentDetails.student.createdAt).toLocaleDateString()}
+                    {formatDate(studentDetails.student.createdAt)}
                   </p>
                 </div>
                 <div>
@@ -1621,9 +1898,9 @@ export default function AdminDashboard() {
                               Tutor: {session.tutor?.user?.firstName} {session.tutor?.user?.lastName}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {session.scheduledAt && new Date(
+                              {session.scheduledAt && formatDateTime(
                                 session.scheduledAt?.toDate ? session.scheduledAt.toDate() : session.scheduledAt
-                              ).toLocaleString()}
+                              )}
                             </p>
                           </div>
                           <div className="text-right">
@@ -1713,9 +1990,9 @@ export default function AdminDashboard() {
                               Student: {session.student?.firstName} {session.student?.lastName}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {session.scheduledAt && new Date(
+                              {session.scheduledAt && formatDateTime(
                                 session.scheduledAt?.toDate ? session.scheduledAt.toDate() : session.scheduledAt
-                              ).toLocaleString()}
+                              )}
                             </p>
                           </div>
                           <div className="text-right">

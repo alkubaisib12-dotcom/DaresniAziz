@@ -1100,18 +1100,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin analytics endpoint
-  app.get("/api/admin/analytics", requireUser, requireAdmin, async (_req, res) => {
+  app.get("/api/admin/analytics", requireUser, requireAdmin, async (req, res) => {
     try {
       const now = new Date();
       const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
+      // Get date range from query parameters
+      const fromDateParam = req.query.fromDate as string | undefined;
+      const toDateParam = req.query.toDate as string | undefined;
+      const fromDate = fromDateParam ? new Date(fromDateParam) : undefined;
+      const toDate = toDateParam ? new Date(toDateParam) : undefined;
+
+      // Helper to check if a date is in range
+      const isInDateRange = (dateValue: any): boolean => {
+        if (!fromDate && !toDate) return true;
+        const date = dateValue?.toDate ? dateValue.toDate() : new Date(dateValue);
+        if (fromDate && date < fromDate) return false;
+        if (toDate && date > toDate) return false;
+        return true;
+      };
+
       // Get all users with timestamps
       const usersSnap = await fdb!.collection("users").get();
-      const users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+      let users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+
+      // Filter users by date range
+      if (fromDate || toDate) {
+        users = users.filter(u => isInDateRange(u.createdAt));
+      }
 
       // Get all sessions
       const sessionsSnap = await fdb!.collection("tutoring_sessions").get();
-      const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+      let sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+
+      // Filter sessions by date range (using createdAt or scheduledAt)
+      if (fromDate || toDate) {
+        sessions = sessions.filter(s => isInDateRange(s.createdAt || s.scheduledAt));
+      }
 
       // Get all tutor profiles for subjects
       const tutorProfiles = await listCollection<any>("tutor_profiles");
@@ -1306,11 +1331,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get tutor's sessions
       const sessionsSnap = await fdb!.collection("tutoring_sessions")
         .where("tutorId", "==", tutorProfile.id)
-        .orderBy("scheduledAt", "desc")
-        .limit(50)
         .get();
 
-      const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Sort in memory to avoid needing a composite index
+      const sortedDocs = sessionsSnap.docs.sort((a, b) => {
+        const aTime = coerceMillis(a.get("scheduledAt"));
+        const bTime = coerceMillis(b.get("scheduledAt"));
+        return bTime - aTime; // descending
+      }).slice(0, 50); // limit to 50
+
+      const sessions = sortedDocs.map(d => ({ id: d.id, ...d.data() }));
 
       // Get unique student and subject IDs
       const studentIds = new Set<string>();
@@ -1349,11 +1379,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Mark all notifications as read
   app.post("/api/admin/notifications/mark-all-read", requireUser, requireAdmin, async (req, res) => {
     try {
-      const userId = req.user!.id;
-
-      // Get all unread notifications for this admin
+      // Get all unread admin notifications
       const unreadSnap = await fdb!.collection("notifications")
-        .where("recipientId", "==", userId)
+        .where("audience", "==", "admin")
         .where("isRead", "==", false)
         .get();
 
@@ -2363,7 +2391,7 @@ app.get("/api/tutors/:id", async (req, res) => {
       const subject = subjectSnap.exists ? subjectSnap.data()?.name : undefined;
 
       const studentSnap = await fdb!.collection("users").doc(session.studentId).get();
-      const studentName = studentSnap.exists ? studentSnap.data()?.name : undefined;
+      const studentName = studentSnap.exists ? `${studentSnap.data()?.firstName} ${studentSnap.data()?.lastName}` : undefined;
 
       // Generate the AI summary
       const aiSummary = await generateLessonSummary({
@@ -2384,6 +2412,58 @@ app.get("/api/tutors/:id", async (req, res) => {
         },
         { merge: true }
       );
+
+      // Automatically generate quiz after summary is created
+      try {
+        const { generateSessionQuiz } = await import("./ai-quiz");
+
+        // Generate the quiz
+        const quizData = await generateSessionQuiz({
+          aiSummary,
+          subject,
+          studentName,
+        });
+
+        // Save the quiz to Firestore
+        const quizRef = fdb!.collection("session_quizzes").doc();
+        await quizRef.set({
+          sessionId,
+          ...quizData,
+          createdAt: now(),
+          aiGenerated: true,
+        });
+
+        // Update session with quiz reference
+        await ref.set(
+          {
+            quizId: quizRef.id,
+            updatedAt: now(),
+          },
+          { merge: true }
+        );
+
+        console.log(`Quiz auto-generated for session ${sessionId}`);
+      } catch (quizError) {
+        // Log error but don't fail the summary generation
+        console.error("Error auto-generating quiz (non-critical):", quizError);
+      }
+
+      // Send notification to student about new lesson report
+      try {
+        await fdb!.collection("notifications").add({
+          userId: session.studentId,
+          audience: "user",
+          type: "LESSON_REPORT_READY",
+          title: "New Lesson Report Available",
+          body: `Your tutor has created a lesson report for your ${subject || "session"}. View the report and take the improvement quiz!`,
+          isRead: false,
+          sessionId,
+          createdAt: now(),
+        });
+        console.log(`Notification sent to student ${session.studentId}`);
+      } catch (notifError) {
+        console.error("Error sending notification (non-critical):", notifError);
+      }
 
       const updated = await ref.get();
       res.json({ id: updated.id, ...updated.data() });
@@ -2428,6 +2508,294 @@ app.get("/api/tutors/:id", async (req, res) => {
   });
 }
 });
+
+  // === SESSION QUIZZES ===
+
+  // Generate quiz from session summary
+  app.post("/api/sessions/:id/generate-quiz", requireUser, async (req, res) => {
+    try {
+      const user = req.user!;
+      const sessionId = req.params.id;
+
+      const sessionRef = fdb!.collection("tutoring_sessions").doc(sessionId);
+      const sessionSnap = await sessionRef.get();
+      if (!sessionSnap.exists) {
+        return res.status(404).json({ message: "Session not found", fieldErrors: {} });
+      }
+      const session = { id: sessionSnap.id, ...(sessionSnap.data() as any) } as any;
+
+      // Only tutors or admins can generate quizzes
+      if (user.role === "tutor") {
+        const profSnap = await fdb!.collection("tutor_profiles").where("userId", "==", user.id).limit(1).get();
+        const tutorProfile = profSnap.empty ? null : ({ id: profSnap.docs[0].id, ...profSnap.docs[0].data() } as any);
+        if (!tutorProfile || session.tutorId !== tutorProfile.id) {
+          return res.status(403).json({ message: "Not authorized to generate quiz for this session", fieldErrors: {} });
+        }
+      } else if (user.role !== "admin") {
+        return res.status(403).json({ message: "Only tutors can generate session quizzes", fieldErrors: {} });
+      }
+
+      // Check if AI summary exists
+      if (!session.aiSummary) {
+        return res.status(400).json({ message: "AI summary is required to generate a quiz. Please generate the summary first.", fieldErrors: {} });
+      }
+
+      // Import the AI quiz generator
+      const { generateSessionQuiz } = await import("./ai-quiz");
+
+      // Fetch additional context
+      const subjectSnap = await fdb!.collection("subjects").doc(session.subjectId).get();
+      const subject = subjectSnap.exists ? subjectSnap.data()?.name : undefined;
+
+      const studentSnap = await fdb!.collection("users").doc(session.studentId).get();
+      const studentName = studentSnap.exists ? `${studentSnap.data()?.firstName} ${studentSnap.data()?.lastName}` : undefined;
+
+      // Generate the quiz
+      const quizData = await generateSessionQuiz({
+        aiSummary: session.aiSummary,
+        subject,
+        studentName,
+      });
+
+      // Save the quiz to Firestore
+      const quizRef = fdb!.collection("session_quizzes").doc();
+      await quizRef.set({
+        sessionId,
+        ...quizData,
+        createdAt: now(),
+        aiGenerated: true,
+      });
+
+      // Update session with quiz reference
+      await sessionRef.set(
+        {
+          quizId: quizRef.id,
+          updatedAt: now(),
+        },
+        { merge: true }
+      );
+
+      const quiz = await quizRef.get();
+      res.json({ id: quiz.id, ...quiz.data() });
+    } catch (error: any) {
+      console.error("Error generating quiz:", error);
+
+      const msg = String(error?.message ?? "");
+      const isOverloaded =
+        msg.includes("model is overloaded") ||
+        msg.includes("503 Service Unavailable");
+
+      if (isOverloaded) {
+        return res
+          .status(503)
+          .json({
+            message: "AI service is temporarily busy. Please try again in a few seconds.",
+            fieldErrors: {},
+          });
+      }
+
+      if (msg.toLowerCase().includes("api key")) {
+        return res
+          .status(500)
+          .json({
+            message: "AI configuration error. Please contact the administrator.",
+            fieldErrors: {},
+          });
+      }
+
+      if (msg.toLowerCase().includes("quota")) {
+        return res
+          .status(429)
+          .json({
+            message: "AI quota exceeded. Please try again later.",
+            fieldErrors: {},
+          });
+      }
+
+      res.status(500).json({
+        message: msg || "Failed to generate quiz. Please try again.",
+        fieldErrors: {},
+      });
+    }
+  });
+
+  // Get quiz for a session
+  app.get("/api/sessions/:id/quiz", requireUser, async (req, res) => {
+    try {
+      const user = req.user!;
+      const sessionId = req.params.id;
+
+      const sessionRef = fdb!.collection("tutoring_sessions").doc(sessionId);
+      const sessionSnap = await sessionRef.get();
+      if (!sessionSnap.exists) {
+        return res.status(404).json({ message: "Session not found", fieldErrors: {} });
+      }
+      const session = { id: sessionSnap.id, ...(sessionSnap.data() as any) } as any;
+
+      // Verify user is the student or tutor of this session
+      let isAuthorized = false;
+      if (user.role === "student" && session.studentId === user.id) {
+        isAuthorized = true;
+      } else if (user.role === "tutor") {
+        const profSnap = await fdb!.collection("tutor_profiles").where("userId", "==", user.id).limit(1).get();
+        const tutorProfile = profSnap.empty ? null : ({ id: profSnap.docs[0].id, ...profSnap.docs[0].data() } as any);
+        if (tutorProfile && session.tutorId === tutorProfile.id) {
+          isAuthorized = true;
+        }
+      } else if (user.role === "admin") {
+        isAuthorized = true;
+      }
+
+      if (!isAuthorized) {
+        return res.status(403).json({ message: "Not authorized to view this quiz", fieldErrors: {} });
+      }
+
+      // Get quiz by quizId from session or by sessionId query
+      let quizSnap;
+      if (session.quizId) {
+        quizSnap = await fdb!.collection("session_quizzes").doc(session.quizId).get();
+      } else {
+        const quizzes = await fdb!.collection("session_quizzes").where("sessionId", "==", sessionId).limit(1).get();
+        quizSnap = quizzes.empty ? null : quizzes.docs[0];
+      }
+
+      if (!quizSnap || !quizSnap.exists) {
+        return res.status(404).json({ message: "Quiz not found for this session", fieldErrors: {} });
+      }
+
+      const quiz = { id: quizSnap.id, ...quizSnap.data() };
+
+      // Get student's attempt if they're a student
+      if (user.role === "student") {
+        const attemptSnap = await fdb!.collection("quiz_attempts")
+          .where("quizId", "==", quizSnap.id)
+          .where("studentId", "==", user.id)
+          .limit(1)
+          .get();
+
+        if (!attemptSnap.empty) {
+          const attempt = { id: attemptSnap.docs[0].id, ...attemptSnap.docs[0].data() };
+          res.json({ quiz, attempt });
+          return;
+        }
+      }
+
+      res.json({ quiz, attempt: null });
+    } catch (error) {
+      console.error("Error fetching quiz:", error);
+      res.status(500).json({ message: "Failed to fetch quiz", fieldErrors: {} });
+    }
+  });
+
+  // Submit quiz answers
+  app.post("/api/sessions/:id/quiz/submit", requireUser, async (req, res) => {
+    try {
+      const user = req.user!;
+      const sessionId = req.params.id;
+      const { answers } = req.body; // answers: { questionIndex: selectedAnswer }
+
+      if (user.role !== "student") {
+        return res.status(403).json({ message: "Only students can submit quiz answers", fieldErrors: {} });
+      }
+
+      const sessionRef = fdb!.collection("tutoring_sessions").doc(sessionId);
+      const sessionSnap = await sessionRef.get();
+      if (!sessionSnap.exists) {
+        return res.status(404).json({ message: "Session not found", fieldErrors: {} });
+      }
+      const session = { id: sessionSnap.id, ...(sessionSnap.data() as any) } as any;
+
+      // Verify student is authorized
+      if (session.studentId !== user.id) {
+        return res.status(403).json({ message: "Not authorized to submit answers for this quiz", fieldErrors: {} });
+      }
+
+      // Get quiz
+      let quizSnap;
+      if (session.quizId) {
+        quizSnap = await fdb!.collection("session_quizzes").doc(session.quizId).get();
+      } else {
+        const quizzes = await fdb!.collection("session_quizzes").where("sessionId", "==", sessionId).limit(1).get();
+        quizSnap = quizzes.empty ? null : quizzes.docs[0];
+      }
+
+      if (!quizSnap || !quizSnap.exists) {
+        return res.status(404).json({ message: "Quiz not found", fieldErrors: {} });
+      }
+
+      const quiz = { id: quizSnap.id, ...quizSnap.data() } as any;
+
+      // Calculate score
+      let correctCount = 0;
+      const totalQuestions = quiz.questions.length;
+      const detailedResults: any[] = [];
+
+      quiz.questions.forEach((question: any, index: number) => {
+        const studentAnswer = answers[index];
+        const isCorrect = studentAnswer === question.correctAnswer;
+        if (isCorrect) correctCount++;
+
+        detailedResults.push({
+          questionIndex: index,
+          question: question.question,
+          studentAnswer,
+          correctAnswer: question.correctAnswer,
+          isCorrect,
+          explanation: question.explanation,
+          topic: question.topic,
+        });
+      });
+
+      const score = Math.round((correctCount / totalQuestions) * 100);
+
+      // Check if attempt already exists
+      const existingAttempt = await fdb!.collection("quiz_attempts")
+        .where("quizId", "==", quizSnap.id)
+        .where("studentId", "==", user.id)
+        .limit(1)
+        .get();
+
+      let attemptRef;
+      if (!existingAttempt.empty) {
+        // Update existing attempt
+        attemptRef = existingAttempt.docs[0].ref;
+        await attemptRef.update({
+          answers,
+          score,
+          correctCount,
+          totalQuestions,
+          detailedResults,
+          completedAt: now(),
+          updatedAt: now(),
+        });
+      } else {
+        // Create new attempt
+        attemptRef = fdb!.collection("quiz_attempts").doc();
+        await attemptRef.set({
+          quizId: quizSnap.id,
+          sessionId,
+          studentId: user.id,
+          answers,
+          score,
+          correctCount,
+          totalQuestions,
+          detailedResults,
+          completedAt: now(),
+          createdAt: now(),
+        });
+      }
+
+      const attempt = await attemptRef.get();
+      res.json({
+        id: attempt.id,
+        ...attempt.data(),
+        message: `Quiz completed! You scored ${score}% (${correctCount}/${totalQuestions} correct)`
+      });
+    } catch (error) {
+      console.error("Error submitting quiz:", error);
+      res.status(500).json({ message: "Failed to submit quiz", fieldErrors: {} });
+    }
+  });
 
   // === REVIEWS ===
   app.get("/api/reviews/:tutorId", async (req, res) => {

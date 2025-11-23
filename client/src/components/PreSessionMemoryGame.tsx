@@ -487,18 +487,11 @@ function MemoryGamePanel({ onClose }: { onClose: () => void }) {
 
 export default function PreSessionMemoryGame() {
   const [isOpen, setIsOpen] = useState(false);
-  const [showBubble, setShowBubble] = useState(true);
-
-  const handleHideBubble = () => {
-    setShowBubble(false);
-    setIsOpen(false);
-  };
 
   // Listen for menu event to open the game
   useEffect(() => {
     const handleOpenMemoryGame = () => {
       setIsOpen(true);
-      setShowBubble(true); // Show the game even if bubble was hidden
     };
 
     window.addEventListener("open-memory-game", handleOpenMemoryGame);
@@ -508,48 +501,9 @@ export default function PreSessionMemoryGame() {
     };
   }, []);
 
-  if (!showBubble) {
-    return null;
-  }
-
   return (
     <>
-      {/* Floating Launcher Button */}
-      {!isOpen && (
-        <div className="fixed bottom-6 right-6 z-50 group">
-          <button
-            onClick={() => setIsOpen(true)}
-            className="w-14 h-14 rounded-full bg-gradient-to-r from-primary to-primary/80 text-white shadow-lg hover:shadow-xl transition-all hover:scale-110 flex items-center justify-center relative"
-            title="Play Memory Game"
-          >
-            <i className="fas fa-brain text-xl" />
-
-            {/* Pulse animation */}
-            <span className="absolute inset-0 rounded-full bg-primary animate-ping opacity-20" />
-          </button>
-
-          {/* Hide bubble button */}
-          <button
-            onClick={handleHideBubble}
-            className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 flex items-center justify-center"
-            title="Don't show again"
-          >
-            <i className="fas fa-times text-xs" />
-          </button>
-
-          {/* Tooltip */}
-          <div className="absolute bottom-full right-0 mb-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-            <div className="bg-gray-900 text-white text-xs rounded-lg px-3 py-2 whitespace-nowrap">
-              Take a brain break! 🧠
-              <div className="absolute top-full right-4 -mt-1">
-                <div className="border-4 border-transparent border-t-gray-900" />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Game Panel */}
+      {/* Game Panel - Only accessible from navbar */}
       {isOpen && <MemoryGamePanel onClose={() => setIsOpen(false)} />}
     </>
   );
