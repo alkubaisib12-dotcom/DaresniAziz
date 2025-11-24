@@ -1533,8 +1533,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const profs = await listCollection<any>("tutor_profiles");
       const userIds = profs.map((p) => p.userId).filter(Boolean);
+      const tutorProfileIds = profs.map((p) => p.id);
+
       const usersMap = await batchLoadMap<any>("users", userIds);
-      const results = profs.map((p) => ({ profile: p, user: usersMap.get(p.userId) || null }));
+
+      // Fetch all sessions for all tutors
+      const allSessionsSnap = await fdb!.collection("tutoring_sessions").get();
+      const allSessions = allSessionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Fetch all reviews
+      const allReviewsSnap = await fdb!.collection("reviews").get();
+      const allReviews = allReviewsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Calculate statistics for each tutor
+      const results = profs.map((p) => {
+        const tutorSessions = allSessions.filter((s: any) => s.tutorId === p.id);
+        const tutorReviews = allReviews.filter((r: any) => r.tutorId === p.id);
+
+        const completedSessions = tutorSessions.filter((s: any) => s.status === "completed");
+        const cancelledSessions = tutorSessions.filter((s: any) => s.status === "cancelled");
+        const nonCancelledSessions = tutorSessions.filter((s: any) => s.status !== "cancelled");
+
+        // Calculate revenue (from completed sessions)
+        const totalRevenue = completedSessions.reduce((sum: number, s: any) => {
+          const price = s.priceCents ? s.priceCents / 100 : (s.price || 0);
+          return sum + price;
+        }, 0);
+
+        // Calculate average rating
+        const averageRating = tutorReviews.length > 0
+          ? tutorReviews.reduce((sum: number, r: any) => sum + (r.rating || 0), 0) / tutorReviews.length
+          : 0;
+
+        // Calculate completion rate
+        const completionRate = nonCancelledSessions.length > 0
+          ? (completedSessions.length / nonCancelledSessions.length) * 100
+          : 0;
+
+        return {
+          profile: p,
+          user: usersMap.get(p.userId) || null,
+          stats: {
+            totalSessions: tutorSessions.length,
+            completedSessions: completedSessions.length,
+            cancelledSessions: cancelledSessions.length,
+            completionRate: Math.round(completionRate * 10) / 10,
+            totalRevenue: Math.round(totalRevenue * 100) / 100,
+            averageRating: Math.round(averageRating * 100) / 100,
+            reviewCount: tutorReviews.length,
+          },
+        };
+      });
+
       res.json(results);
     } catch (error) {
       console.error("Error fetching tutors:", error);
