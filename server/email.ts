@@ -39,6 +39,34 @@ if (process.env.RESEND_API_KEY) {
   console.warn("No email service configured. Set RESEND_API_KEY or SMTP credentials.");
 }
 
+export function getEmailServiceStatus(): {
+  configured: boolean;
+  service: "resend" | "smtp" | null;
+  fromAddress: string | null;
+} {
+  if (emailService === "resend") {
+    return {
+      configured: true,
+      service: "resend",
+      fromAddress: process.env.RESEND_FROM || "Daresni <noreply@example.com>",
+    };
+  }
+
+  if (emailService === "smtp") {
+    return {
+      configured: true,
+      service: "smtp",
+      fromAddress: process.env.SMTP_FROM || "Daresni <noreply@example.com>",
+    };
+  }
+
+  return {
+    configured: false,
+    service: null,
+    fromAddress: null,
+  };
+}
+
 export interface EmailOptions {
   to: string[];
   subject: string;

@@ -8,7 +8,7 @@ import type * as FirebaseFirestore from "@google-cloud/firestore";
 
 import { requireUser, requireAdmin, type AuthUser, fdb } from "./firebase-admin";
 import { z } from "zod";
-import { sendToAdmins, createTutorRegistrationEmail } from "./email";
+import { sendToAdmins, createTutorRegistrationEmail, getEmailServiceStatus } from "./email";
 import { TutorRankingService } from "./services/tutorRanking";
 import studyBuddyRoutes from "./routes/studyBuddyRoutes";
 
@@ -376,7 +376,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/health", async (_req, res) => {
-    res.json({ status: "ok", message: "Server is running" });
+    const emailStatus = getEmailServiceStatus();
+    res.json({
+      status: "ok",
+      message: "Server is running",
+      firebaseConfigured: !!fdb,
+      email: emailStatus,
+      timestamp: new Date().toISOString(),
+      uptimeMs: Math.round(process.uptime() * 1000),
+    });
   });
 
   app.get("/api/stats", async (_req, res) => {
@@ -3131,6 +3139,11 @@ I'm here to help you understand the concepts better and practice! Feel free to a
   const createMessageSchema = z.object({
     receiverId: z.string(),
     content: z.string().min(1),
+  });
+
+  const adminMessagesQuerySchema = z.object({
+    studentId: z.string().optional(),
+    tutorId: z.string().optional(),
   });
 
   function isStudentTutorPair(me: AuthUser, other: { id: string; role?: string | null } | null) {
