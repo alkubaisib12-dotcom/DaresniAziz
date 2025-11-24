@@ -1,0 +1,6 @@
+# Feature gaps and improvement ideas
+
+- **No automated quality gates.** The root scripts only cover development/build/check flows; there are no lint or test scripts, which leaves the codebase without quick regression signals. Consider adding ESLint/Prettier plus unit/integration test runners to catch issues early in CI.
+- **HTTP middleware hardening is minimal.** Server setup only applies JSON/urlencoded parsing and logging; there is no CORS policy, rate limiting, or security headers. Adding middleware such as `cors`, `helmet`, and `express-rate-limit` would improve API robustness and protect the authentication endpoints from abuse.
+- **Startup fails softly on missing Firebase credentials.** If Firebase Admin environment variables are absent, the SDK stays uninitialized and every authenticated request returns a 500 error. Failing fast at boot with a clear error or serving a static maintenance page could prevent confusing runtime failures.
+- **Health check does not verify datastore reachability.** The `/api/health` response now reports Firebase/email configuration state, uptime, and timestamps but does not attempt a Firestore read/write probe. Adding a lightweight connectivity check would help operators detect permission or networking issues earlier.
