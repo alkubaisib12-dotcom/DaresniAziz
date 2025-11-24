@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -59,6 +59,19 @@ export default function ProfileSettings() {
       profileImageUrl: user?.profileImageUrl || "",
     },
   });
+
+  // Reset form when user data changes (after successful update)
+  useEffect(() => {
+    if (user) {
+      form.reset({
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
+        profileImageUrl: user.profileImageUrl || "",
+      });
+      setImagePreview(user.profileImageUrl || null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: ProfileFormData) => {

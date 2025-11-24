@@ -113,16 +113,16 @@ export const requireUser = async (
       role = (existing.role as any) ?? null;
       profileImageUrl = (existing.profileImageUrl as any) ?? null;
 
+      // Only update email and updatedAt - preserve user's custom firstName/lastName/profileImageUrl
       await userRef.set(
         {
           email,
-          firstName: firstName || existing.firstName || null,
-          lastName: lastName ?? existing.lastName ?? null,
           updatedAt: new Date(),
         },
         { merge: true }
       );
     } else {
+      // New user - set initial values from Firebase Auth
       await userRef.set({
         email,
         firstName: firstName || null,
