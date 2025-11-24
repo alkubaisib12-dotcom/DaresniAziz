@@ -88,10 +88,16 @@ export default function TutorBrowse() {
   const [selectedTutor, setSelectedTutor] = useState<TutorVM | null>(null);
   const [showWizard, setShowWizard] = useState(false);
   const [wizardFilters, setWizardFilters] = useState<TutorFilters | null>(null);
+  const [displayCount, setDisplayCount] = useState(12);
 
   const { user } = useAuth();
   const { toast } = useToast();
   const { favorites, toggle, isFav } = useLocalFavorites(user?.id);
+
+  // Reset display count when filters change
+  useEffect(() => {
+    setDisplayCount(12);
+  }, [searchTerm, selectedSubject, sortBy, wizardFilters]);
 
   /* --------------------------- Load tutors from API --------------------------- */
   // Use AI recommendations when wizard filters are active
@@ -223,6 +229,10 @@ export default function TutorBrowse() {
     return sorted;
   }, [tutors, searchTerm, selectedSubject, sortBy, wizardFilters]);
 
+  // Slice tutors for pagination
+  const displayedTutors = filteredTutors.slice(0, displayCount);
+  const hasMoreTutors = filteredTutors.length > displayCount;
+
   /* --------------------------- Handlers --------------------------------------- */
   const handleBookSession = (tutor: TutorVM) => {
     if (user?.role === "tutor") {
@@ -272,6 +282,10 @@ export default function TutorBrowse() {
       title: "AI Matching Deactivated",
       description: "Showing all tutors.",
     });
+  };
+
+  const handleLoadMore = () => {
+    setDisplayCount(prev => prev + 12);
   };
 
   /* ------------------------------ UI ----------------------------------------- */
@@ -464,7 +478,7 @@ export default function TutorBrowse() {
           </div>
         ) : filteredTutors.length > 0 ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredTutors.map((tutor) => (
+            {displayedTutors.map((tutor) => (
               <TutorCard
                 key={tutor.id}
                 tutor={tutor}
@@ -498,11 +512,15 @@ export default function TutorBrowse() {
           </Card>
         )}
 
-        {/* Load More (placeholder) */}
-        {filteredTutors.length > 12 && (
+        {/* Load More */}
+        {hasMoreTutors && (
           <div className="text-center mt-8">
-            <Button variant="outline" data-testid="button-load-more">
-              Load More Tutors
+            <Button
+              variant="outline"
+              onClick={handleLoadMore}
+              data-testid="button-load-more"
+            >
+              Load More Tutors ({filteredTutors.length - displayCount} remaining)
             </Button>
           </div>
         )}

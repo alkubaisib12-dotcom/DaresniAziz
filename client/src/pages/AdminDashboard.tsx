@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { formatMoney } from "@/lib/currency";
@@ -57,7 +57,6 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChatHistoryDialog } from "@/components/ChatHistoryDialog";
-import { MessageSquare } from "lucide-react";
 
 interface Notification {
   id: string;
@@ -93,6 +92,15 @@ interface TutorProfile {
     profileImageUrl?: string;
   } | null;
   subjects?: Array<{ id: string; name: string }>;
+  stats?: {
+    totalSessions: number;
+    completedSessions: number;
+    cancelledSessions: number;
+    completionRate: number;
+    totalRevenue: number;
+    averageRating: number;
+    reviewCount: number;
+  };
 }
 
 interface Student {
@@ -178,6 +186,7 @@ export default function AdminDashboard() {
   const [selectedTutorForSessions, setSelectedTutorForSessions] = useState<TutorProfile | null>(null);
   const [studentChatHistory, setStudentChatHistory] = useState<{ id: string; name: string } | null>(null);
   const [tutorChatHistory, setTutorChatHistory] = useState<{ id: string; name: string } | null>(null);
+  const [tutorRankingTab, setTutorRankingTab] = useState<"overall" | "revenue" | "sessions" | "rating">("overall");
 
   // Date range filter state
   type DatePreset = "all" | "today" | "week" | "month" | "year" | "custom";
@@ -591,40 +600,53 @@ export default function AdminDashboard() {
   const filteredAllTutors = allTutors.filter((t) => isDateInRange(t.profile.createdAt));
   const filteredAdminUsers = adminUsers.filter((a) => isDateInRange(a.createdAt));
 
+  // Rank and sort tutors based on selected tab
+  const rankedTutors = useMemo(() => {
+    const tutorsWithStats = filteredAllTutors.map(tutor => {
+      const stats = tutor.stats || {
+        totalSessions: 0,
+        completedSessions: 0,
+        completionRate: 0,
+        totalRevenue: 0,
+        averageRating: 0,
+        reviewCount: 0,
+      };
+
+      // Calculate overall score: 40% rating + 40% sessions + 20% completion rate
+      // Normalize each metric to 0-100 scale
+      const ratingScore = (stats.averageRating / 5) * 100; // out of 5 stars
+      const sessionsScore = Math.min((stats.completedSessions / 100) * 100, 100); // cap at 100 sessions
+      const completionScore = stats.completionRate; // already a percentage
+
+      const overallScore = (
+        (ratingScore * 0.4) +
+        (sessionsScore * 0.4) +
+        (completionScore * 0.2)
+      );
+
+      return { ...tutor, stats, overallScore };
+    });
+
+    // Sort based on selected ranking tab
+    return tutorsWithStats.sort((a, b) => {
+      switch (tutorRankingTab) {
+        case "overall":
+          return b.overallScore - a.overallScore;
+        case "revenue":
+          return (b.stats?.totalRevenue || 0) - (a.stats?.totalRevenue || 0);
+        case "sessions":
+          return (b.stats?.completedSessions || 0) - (a.stats?.completedSessions || 0);
+        case "rating":
+          return (b.stats?.averageRating || 0) - (a.stats?.averageRating || 0);
+        default:
+          return 0;
+      }
+    });
+  }, [filteredAllTutors, tutorRankingTab]);
+
   // Count ALL unread notifications (not just filtered) for the "Mark All as Read" button
   const unreadCount = notifications.filter((n) => !n.isRead).length;
   const pendingCount = filteredPendingTutors.length;
-
-  const chatMessages = chatHistory?.messages || [];
-  const conversationMap = new Map<
-    string,
-    { key: string; student?: BasicUser | null; tutor?: BasicUser | null; messages: AdminMessage[] }
-  >();
-
-  chatMessages.forEach((msg) => {
-    const key = msg.conversationKey || `${msg.studentId}_${msg.tutorId}`;
-    const existing = conversationMap.get(key) || {
-      key,
-      student: msg.student,
-      tutor: msg.tutor,
-      messages: [] as AdminMessage[],
-    };
-
-    existing.student = existing.student || msg.student;
-    existing.tutor = existing.tutor || msg.tutor;
-    existing.messages.push(msg);
-    conversationMap.set(key, existing);
-  });
-
-  const conversations = Array.from(conversationMap.values()).sort((a, b) => {
-    const lastA = a.messages[a.messages.length - 1]?.createdAt || "";
-    const lastB = b.messages[b.messages.length - 1]?.createdAt || "";
-    return new Date(lastB).getTime() - new Date(lastA).getTime();
-  });
-
-  const activeConversation =
-    conversations.find((c) => c.key === activeConversationKey) || conversations[0] || null;
-  const activeMessages = activeConversation?.messages || [];
 
   // IMPORTANT: this comes *after* all hooks, so hooks order is stable
   if (authLoading || !isAdmin) {
@@ -1032,6 +1054,143 @@ export default function AdminDashboard() {
                         <Bar dataKey="sessions" fill="#9B1B30" name="Sessions" />
                       </BarChart>
                     </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Tutor Leaderboard */}
+              {rankedTutors.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2 mb-4">
+                      <TrendingUp className="h-5 w-5" />
+                      Top Performing Tutors
+                    </CardTitle>
+                    <CardDescription className="mb-4">Ranked by overall performance score</CardDescription>
+
+                    {/* Full Width Centered Tabs */}
+                    <Tabs value={tutorRankingTab} onValueChange={(v: any) => setTutorRankingTab(v)}>
+                      <TabsList className="grid w-full grid-cols-4">
+                        <TabsTrigger
+                          value="overall"
+                          className="data-[state=active]:bg-[#9B1B30] data-[state=active]:text-white"
+                        >
+                          Overall Best
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="revenue"
+                          className="data-[state=active]:bg-[#9B1B30] data-[state=active]:text-white"
+                        >
+                          Revenue
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="sessions"
+                          className="data-[state=active]:bg-[#9B1B30] data-[state=active]:text-white"
+                        >
+                          Sessions
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="rating"
+                          className="data-[state=active]:bg-[#9B1B30] data-[state=active]:text-white"
+                        >
+                          Rating
+                        </TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                  </CardHeader>
+                  <CardContent>
+                    {/* Ranking Info */}
+                    {tutorRankingTab === "overall" && (
+                      <div className="mb-4 p-3 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg">
+                        <p className="text-sm font-medium mb-2">Overall Best Ranking Formula:</p>
+                        <div className="flex flex-wrap gap-3 text-xs">
+                          <Badge variant="secondary" className="bg-purple-100">40% Rating</Badge>
+                          <Badge variant="secondary" className="bg-blue-100">40% Sessions</Badge>
+                          <Badge variant="secondary" className="bg-green-100">20% Completion Rate</Badge>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Top 10 Tutors */}
+                    <div className="space-y-3">
+                      {rankedTutors.slice(0, 10).map((tutor, index) => {
+                        const stats = tutor.stats || {
+                          averageRating: 0,
+                          completedSessions: 0,
+                          totalRevenue: 0,
+                          reviewCount: 0
+                        };
+
+                        return (
+                          <div
+                            key={tutor.profile.id}
+                            className={`p-3 border rounded-lg flex items-center gap-4 ${
+                              index < 3 && tutorRankingTab === "overall"
+                                ? "border-2 border-yellow-400 bg-yellow-50/30"
+                                : "bg-muted/30"
+                            }`}
+                          >
+                            {/* Rank Badge */}
+                            <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold ${
+                              index === 0 ? "bg-yellow-500 text-white text-lg" :
+                              index === 1 ? "bg-gray-400 text-white text-lg" :
+                              index === 2 ? "bg-orange-600 text-white text-lg" :
+                              "bg-muted text-muted-foreground"
+                            }`}>
+                              {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `#${index + 1}`}
+                            </div>
+
+                            {/* Tutor Info */}
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="font-semibold">
+                                  {tutor.user?.firstName} {tutor.user?.lastName}
+                                </p>
+                                {tutor.profile.isVerified && (
+                                  <Badge variant="default" className="bg-green-600 h-5 text-xs">✓</Badge>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                <span className="flex items-center gap-1" title={`${stats.reviewCount} reviews`}>
+                                  <CheckCircle className="h-3 w-3" />
+                                  {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : "N/A"}/5
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <BookOpen className="h-3 w-3" />
+                                  {stats.completedSessions} sessions
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <DollarSign className="h-3 w-3" />
+                                  {formatMoney(stats.totalRevenue)}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Score Badge */}
+                            {tutorRankingTab === "overall" && (
+                              <Badge variant="outline" className="bg-purple-100 font-bold">
+                                {tutor.overallScore > 0 ? tutor.overallScore.toFixed(1) : "0.0"}
+                              </Badge>
+                            )}
+                            {tutorRankingTab === "revenue" && (
+                              <Badge variant="outline" className="bg-green-100 font-bold">
+                                {formatMoney(stats.totalRevenue)}
+                              </Badge>
+                            )}
+                            {tutorRankingTab === "sessions" && (
+                              <Badge variant="outline" className="bg-blue-100 font-bold">
+                                {stats.completedSessions}
+                              </Badge>
+                            )}
+                            {tutorRankingTab === "rating" && (
+                              <Badge variant="outline" className="bg-yellow-100 font-bold">
+                                {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : "N/A"}⭐
+                              </Badge>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </CardContent>
                 </Card>
               )}
@@ -1534,18 +1693,6 @@ export default function AdminDashboard() {
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={!tutor.user?.id}
-                          onClick={() =>
-                            tutor.user?.id &&
-                            openChatHistory("tutor", tutor.user.id, formatUserName(tutor.user))
-                          }
-                        >
-                          <MessageSquare className="h-4 w-4 mr-1" />
-                          View Chats
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
                           onClick={() => setSelectedTutor(tutor)}
                         >
                           <Eye className="h-4 w-4 mr-1" />
@@ -1672,99 +1819,6 @@ export default function AdminDashboard() {
           </Card>
         </TabsContent>
       </Tabs>
-
-      <Dialog open={!!chatViewer} onOpenChange={(open) => !open && closeChatHistory()}>
-        <DialogContent className="max-w-5xl">
-          <DialogHeader>
-            <DialogTitle>Chat history</DialogTitle>
-            <DialogDescription>
-              Viewing conversations for {chatViewer?.name} as a {chatViewer?.mode}.
-            </DialogDescription>
-          </DialogHeader>
-
-          {chatHistoryLoading ? (
-            <div className="flex items-center justify-center py-6">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#9B1B30]" />
-            </div>
-          ) : conversations.length === 0 ? (
-            <div className="text-center py-6 text-muted-foreground">
-              <MessageSquare className="h-10 w-10 mx-auto mb-2 text-muted-foreground/50" />
-              <p>No messages found for this user yet.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                {conversations.map((conv) => {
-                  const counterpart = chatViewer?.mode === "student" ? conv.tutor : conv.student;
-                  const last = conv.messages[conv.messages.length - 1];
-
-                  return (
-                    <button
-                      key={conv.key}
-                      className={`w-full text-left p-3 rounded-lg border transition ${
-                        conv.key === activeConversation?.key
-                          ? "border-[#9B1B30] bg-rose-50"
-                          : "border-border bg-background hover:border-[#9B1B30]/50"
-                      }`}
-                      onClick={() => setActiveConversationKey(conv.key)}
-                    >
-                      <p className="font-semibold">
-                        {chatViewer?.mode === "student" ? "Tutor" : "Student"}: {formatUserName(counterpart)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {conv.messages.length} messages · Last {new Date(last.createdAt).toLocaleString()}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="md:col-span-2">
-                {activeConversation ? (
-                  <div className="space-y-3 max-h-[420px] overflow-y-auto">
-                    <div className="flex items-center justify-between bg-muted p-3 rounded-lg">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Student</p>
-                        <p className="font-semibold">{formatUserName(activeConversation.student)}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Tutor</p>
-                        <p className="font-semibold">{formatUserName(activeConversation.tutor)}</p>
-                      </div>
-                    </div>
-
-                    {activeMessages.map((msg) => {
-                      const isStudentMessage = msg.senderId === activeConversation.student?.id;
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`p-3 rounded-lg border ${
-                            isStudentMessage ? "bg-blue-50/70 border-blue-200" : "bg-emerald-50/70 border-emerald-200"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>{formatUserName(msg.sender)}</span>
-                            <span>{new Date(msg.createdAt).toLocaleString()}</span>
-                          </div>
-                          <p className="mt-2 text-sm whitespace-pre-wrap">{msg.content}</p>
-                        </div>
-                      );
-                    })}
-
-                    {activeMessages.length === 0 && (
-                      <div className="text-center text-muted-foreground py-6">
-                        No messages in this conversation yet.
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center text-muted-foreground py-6">Select a conversation to view messages.</div>
-                )}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* Delete User Confirmation Dialog */}
       <AlertDialog open={!!userToDelete} onOpenChange={() => setUserToDelete(null)}>
