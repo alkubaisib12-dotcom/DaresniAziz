@@ -1235,48 +1235,93 @@ export default function AdminDashboard() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {filteredNotifications.map((notification) => (
-                    <div
-                      key={notification.id}
-                      className={`p-4 rounded-lg border ${
-                        notification.isRead
-                          ? "bg-background border-border"
-                          : "bg-blue-50 border-blue-200"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <AlertCircle className="h-4 w-4 text-[#9B1B30]" />
-                            <h4 className="font-medium">{notification.title}</h4>
+                  {filteredNotifications.map((notification) => {
+                    const isPhoneViolation = notification.type === "PHONE_NUMBER_VIOLATION";
+                    const notificationData = notification.data as any;
+
+                    return (
+                      <div
+                        key={notification.id}
+                        className={`p-4 rounded-lg border ${
+                          notification.isRead
+                            ? "bg-background border-border"
+                            : "bg-blue-50 border-blue-200"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <AlertCircle className="h-4 w-4 text-[#9B1B30]" />
+                              <h4 className="font-medium">{notification.title}</h4>
+                              {!notification.isRead && (
+                                <Badge variant="destructive" className="text-xs">
+                                  New
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-2">
+                              {notification.body}
+                            </p>
+                            {isPhoneViolation && notificationData?.messageContent && (
+                              <div className="mt-2 p-2 bg-muted/50 rounded border border-border">
+                                <p className="text-xs font-medium text-muted-foreground mb-1">
+                                  Blocked Message:
+                                </p>
+                                <p className="text-sm italic">"{notificationData.messageContent}"</p>
+                              </div>
+                            )}
+                            <p className="text-xs text-muted-foreground mt-2">
+                              {formatDateTime(notification.createdAt)}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            {isPhoneViolation && notificationData?.senderId && notificationData?.senderRole && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const userType = notificationData.senderRole === "student" ? "student" : "tutor";
+                                  const userName = notificationData.senderName || "User";
+
+                                  if (userType === "student") {
+                                    setStudentChatHistory({
+                                      id: notificationData.senderId,
+                                      name: userName,
+                                    });
+                                  } else {
+                                    setTutorChatHistory({
+                                      id: notificationData.senderId,
+                                      name: userName,
+                                    });
+                                  }
+
+                                  // Mark as read when clicked
+                                  if (!notification.isRead) {
+                                    markAsReadMutation.mutate(notification.id);
+                                  }
+                                }}
+                              >
+                                <MessageSquare className="h-4 w-4 mr-1" />
+                                View Chat History
+                              </Button>
+                            )}
                             {!notification.isRead && (
-                              <Badge variant="destructive" className="text-xs">
-                                New
-                              </Badge>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  markAsReadMutation.mutate(notification.id)
+                                }
+                                disabled={markAsReadMutation.isPending}
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                              </Button>
                             )}
                           </div>
-                          <p className="text-sm text-muted-foreground mb-2">
-                            {notification.body}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatDateTime(notification.createdAt)}
-                          </p>
                         </div>
-                        {!notification.isRead && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              markAsReadMutation.mutate(notification.id)
-                            }
-                            disabled={markAsReadMutation.isPending}
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                          </Button>
-                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>

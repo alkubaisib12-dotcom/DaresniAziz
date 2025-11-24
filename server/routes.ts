@@ -3196,7 +3196,7 @@ I'm here to help you understand the concepts better and practice! Feel free to a
       const recentNumericCount = recentMessages.filter(msg => isMostlyNumeric(msg.content)).length;
 
       if (recentNumericCount >= maxNumericMessages) {
-        return "You're sending numbers too quickly. Please slow down and send complete messages. Sharing phone numbers is not allowed.";
+        return "You're sending numbers too quickly. Please slow down and send complete messages. Sharing phone numbers is not allowed. If you believe this was a mistake, please contact an administrator.";
       }
 
       // Check if sending single digits in sequence (potential phone number)
@@ -3204,7 +3204,7 @@ I'm here to help you understand the concepts better and practice! Feel free to a
         const recentSingleDigits = recentMessages.filter(msg => /^\d{1,3}$/.test(msg.content.trim()));
 
         if (recentSingleDigits.length >= 2) {
-          return "Please avoid sending numbers one by one. If you need to share information, send it in a complete sentence.";
+          return "Please avoid sending numbers one by one. If you need to share information, send it in a complete sentence. If you believe this was a mistake, please contact an administrator.";
         }
       }
     }
@@ -3342,7 +3342,7 @@ I'm here to help you understand the concepts better and practice! Feel free to a
 
         // BLOCK the message - do NOT send it
         return res.status(400).json({
-          message: "Your message was blocked because it appears to contain a phone number. Sharing phone numbers is not allowed. This violation has been reported to administrators.",
+          message: "Your message was blocked because it appears to contain a phone number. Sharing phone numbers is not allowed on this platform. This violation has been reported to administrators. If you believe this was a mistake, please contact an administrator to appeal.",
           fieldErrors: {},
           blocked: true,
         });
