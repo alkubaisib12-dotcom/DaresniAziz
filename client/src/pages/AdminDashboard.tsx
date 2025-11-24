@@ -1062,23 +1062,41 @@ export default function AdminDashboard() {
               {rankedTutors.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="text-lg flex items-center gap-2">
-                          <TrendingUp className="h-5 w-5" />
-                          Top Performing Tutors
-                        </CardTitle>
-                        <CardDescription>Ranked by overall performance score</CardDescription>
-                      </div>
-                      <Tabs value={tutorRankingTab} onValueChange={(v: any) => setTutorRankingTab(v)} className="w-auto">
-                        <TabsList className="grid grid-cols-4">
-                          <TabsTrigger value="overall">Overall</TabsTrigger>
-                          <TabsTrigger value="revenue">Revenue</TabsTrigger>
-                          <TabsTrigger value="sessions">Sessions</TabsTrigger>
-                          <TabsTrigger value="rating">Rating</TabsTrigger>
-                        </TabsList>
-                      </Tabs>
-                    </div>
+                    <CardTitle className="text-lg flex items-center gap-2 mb-4">
+                      <TrendingUp className="h-5 w-5" />
+                      Top Performing Tutors
+                    </CardTitle>
+                    <CardDescription className="mb-4">Ranked by overall performance score</CardDescription>
+
+                    {/* Full Width Centered Tabs */}
+                    <Tabs value={tutorRankingTab} onValueChange={(v: any) => setTutorRankingTab(v)}>
+                      <TabsList className="grid w-full grid-cols-4">
+                        <TabsTrigger
+                          value="overall"
+                          className="data-[state=active]:bg-[#9B1B30] data-[state=active]:text-white"
+                        >
+                          Overall Best
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="revenue"
+                          className="data-[state=active]:bg-[#9B1B30] data-[state=active]:text-white"
+                        >
+                          Revenue
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="sessions"
+                          className="data-[state=active]:bg-[#9B1B30] data-[state=active]:text-white"
+                        >
+                          Sessions
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="rating"
+                          className="data-[state=active]:bg-[#9B1B30] data-[state=active]:text-white"
+                        >
+                          Rating
+                        </TabsTrigger>
+                      </TabsList>
+                    </Tabs>
                   </CardHeader>
                   <CardContent>
                     {/* Ranking Info */}
@@ -1095,74 +1113,83 @@ export default function AdminDashboard() {
 
                     {/* Top 10 Tutors */}
                     <div className="space-y-3">
-                      {rankedTutors.slice(0, 10).map((tutor, index) => (
-                        <div
-                          key={tutor.profile.id}
-                          className={`p-3 border rounded-lg flex items-center gap-4 ${
-                            index < 3 && tutorRankingTab === "overall"
-                              ? "border-2 border-yellow-400 bg-yellow-50/30"
-                              : "bg-muted/30"
-                          }`}
-                        >
-                          {/* Rank Badge */}
-                          <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold ${
-                            index === 0 ? "bg-yellow-500 text-white text-lg" :
-                            index === 1 ? "bg-gray-400 text-white text-lg" :
-                            index === 2 ? "bg-orange-600 text-white text-lg" :
-                            "bg-muted text-muted-foreground"
-                          }`}>
-                            {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `#${index + 1}`}
-                          </div>
+                      {rankedTutors.slice(0, 10).map((tutor, index) => {
+                        const stats = tutor.stats || {
+                          averageRating: 0,
+                          completedSessions: 0,
+                          totalRevenue: 0,
+                          reviewCount: 0
+                        };
 
-                          {/* Tutor Info */}
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <p className="font-semibold">
-                                {tutor.user?.firstName} {tutor.user?.lastName}
-                              </p>
-                              {tutor.profile.isVerified && (
-                                <Badge variant="default" className="bg-green-600 h-5 text-xs">✓</Badge>
-                              )}
+                        return (
+                          <div
+                            key={tutor.profile.id}
+                            className={`p-3 border rounded-lg flex items-center gap-4 ${
+                              index < 3 && tutorRankingTab === "overall"
+                                ? "border-2 border-yellow-400 bg-yellow-50/30"
+                                : "bg-muted/30"
+                            }`}
+                          >
+                            {/* Rank Badge */}
+                            <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold ${
+                              index === 0 ? "bg-yellow-500 text-white text-lg" :
+                              index === 1 ? "bg-gray-400 text-white text-lg" :
+                              index === 2 ? "bg-orange-600 text-white text-lg" :
+                              "bg-muted text-muted-foreground"
+                            }`}>
+                              {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `#${index + 1}`}
                             </div>
-                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                              <span className="flex items-center gap-1">
-                                <CheckCircle className="h-3 w-3" />
-                                {tutor.stats?.averageRating?.toFixed(1) || "0.0"}/5
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <BookOpen className="h-3 w-3" />
-                                {tutor.stats?.completedSessions || 0} sessions
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <DollarSign className="h-3 w-3" />
-                                {formatMoney(tutor.stats?.totalRevenue || 0)}
-                              </span>
-                            </div>
-                          </div>
 
-                          {/* Score Badge */}
-                          {tutorRankingTab === "overall" && (
-                            <Badge variant="outline" className="bg-purple-100 font-bold">
-                              {tutor.overallScore.toFixed(1)}
-                            </Badge>
-                          )}
-                          {tutorRankingTab === "revenue" && (
-                            <Badge variant="outline" className="bg-green-100 font-bold">
-                              {formatMoney(tutor.stats?.totalRevenue || 0)}
-                            </Badge>
-                          )}
-                          {tutorRankingTab === "sessions" && (
-                            <Badge variant="outline" className="bg-blue-100 font-bold">
-                              {tutor.stats?.completedSessions || 0}
-                            </Badge>
-                          )}
-                          {tutorRankingTab === "rating" && (
-                            <Badge variant="outline" className="bg-yellow-100 font-bold">
-                              {tutor.stats?.averageRating?.toFixed(1) || "0.0"}⭐
-                            </Badge>
-                          )}
-                        </div>
-                      ))}
+                            {/* Tutor Info */}
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <p className="font-semibold">
+                                  {tutor.user?.firstName} {tutor.user?.lastName}
+                                </p>
+                                {tutor.profile.isVerified && (
+                                  <Badge variant="default" className="bg-green-600 h-5 text-xs">✓</Badge>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                <span className="flex items-center gap-1" title={`${stats.reviewCount} reviews`}>
+                                  <CheckCircle className="h-3 w-3" />
+                                  {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : "N/A"}/5
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <BookOpen className="h-3 w-3" />
+                                  {stats.completedSessions} sessions
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <DollarSign className="h-3 w-3" />
+                                  {formatMoney(stats.totalRevenue)}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Score Badge */}
+                            {tutorRankingTab === "overall" && (
+                              <Badge variant="outline" className="bg-purple-100 font-bold">
+                                {tutor.overallScore > 0 ? tutor.overallScore.toFixed(1) : "0.0"}
+                              </Badge>
+                            )}
+                            {tutorRankingTab === "revenue" && (
+                              <Badge variant="outline" className="bg-green-100 font-bold">
+                                {formatMoney(stats.totalRevenue)}
+                              </Badge>
+                            )}
+                            {tutorRankingTab === "sessions" && (
+                              <Badge variant="outline" className="bg-blue-100 font-bold">
+                                {stats.completedSessions}
+                              </Badge>
+                            )}
+                            {tutorRankingTab === "rating" && (
+                              <Badge variant="outline" className="bg-yellow-100 font-bold">
+                                {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : "N/A"}⭐
+                              </Badge>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </CardContent>
                 </Card>
