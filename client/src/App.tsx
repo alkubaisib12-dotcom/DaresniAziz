@@ -25,6 +25,8 @@ import NotificationsPage from "@/pages/NotificationsPage";
 import StudentReports from "@/pages/StudentReports";
 import Navbar from "@/components/Navbar";
 import TutorEarningsReport from "@/pages/TutorEarningsReport";
+import PreSessionMemoryGame from "@/components/PreSessionMemoryGame";
+import GlobalStudyBuddy from "@/components/GlobalStudyBuddy";
 
 /** Small helper to support legacy /dashboard -> / */
 function DashboardAlias() {
@@ -53,7 +55,7 @@ function AuthRouteGate() {
     queryKey: ["/api/tutors/profile"],
     enabled: !!user && user.role === "tutor",
     retry: false,
-    staleTime: 0,
+    staleTime: 300000, // Optimized: 5 minutes instead of 0
   });
 
   useEffect(() => {
@@ -208,6 +210,8 @@ export default function App() {
           </Switch>
 
           <Toaster />
+          <PreSessionMemoryGame />
+          <GlobalStudyBuddy />
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>

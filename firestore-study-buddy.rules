@@ -1,0 +1,171 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // ========================================================================
+    // STUDY BUDDY COLLECTIONS
+    // ========================================================================
+
+    // Study Buddy Conversations
+    // Users can only access their own conversations
+    match /study_buddy_conversations/{conversationId} {
+      allow read: if isAuthenticated() &&
+                     resource.data.userId == request.auth.uid;
+
+      allow create: if isAuthenticated() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.keys().hasAll(['conversationId', 'userId', 'title', 'createdAt', 'updatedAt', 'messageCount', 'lastMessage', 'lastMessageAt']);
+
+      allow update: if isAuthenticated() &&
+                       resource.data.userId == request.auth.uid &&
+                       request.resource.data.userId == resource.data.userId; // Prevent userId change
+
+      allow delete: if isAuthenticated() &&
+                       resource.data.userId == request.auth.uid;
+    }
+
+    // Study Buddy Messages
+    // Users can only access messages from their own conversations
+    match /study_buddy_messages/{messageId} {
+      allow read: if isAuthenticated() &&
+                     (resource.data.userId == request.auth.uid ||
+                      get(/databases/$(database)/documents/study_buddy_conversations/$(resource.data.conversationId)).data.userId == request.auth.uid);
+
+      allow create: if isAuthenticated() &&
+                       request.resource.data.keys().hasAll(['messageId', 'conversationId', 'userId', 'role', 'content', 'timestamp']) &&
+                       request.resource.data.userId == request.auth.uid;
+
+      // Messages cannot be updated or deleted (immutable)
+      allow update, delete: if false;
+    }
+
+    // Study Buddy Progress
+    // Users can only read/write their own progress data
+    match /study_buddy_progress/{progressId} {
+      allow read: if isAuthenticated() &&
+                     resource.data.userId == request.auth.uid;
+
+      allow create: if isAuthenticated() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.keys().hasAll([
+                         'progressId', 'userId', 'topicId', 'subjectId', 'topicName',
+                         'totalAttempts', 'correctAnswers', 'incorrectAnswers',
+                         'currentDifficulty', 'masteryScore', 'createdAt', 'updatedAt'
+                       ]);
+
+      allow update: if isAuthenticated() &&
+                       resource.data.userId == request.auth.uid &&
+                       request.resource.data.userId == resource.data.userId; // Prevent userId change
+
+      allow delete: if isAuthenticated() &&
+                       resource.data.userId == request.auth.uid;
+    }
+
+    // Study Buddy Quizzes
+    // Users can only access their own quizzes
+    match /study_buddy_quizzes/{quizId} {
+      allow read: if isAuthenticated() &&
+                     resource.data.userId == request.auth.uid;
+
+      allow create: if isAuthenticated() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.keys().hasAll([
+                         'quizId', 'userId', 'subjectId', 'subjectName', 'topic',
+                         'difficulty', 'generatedAt', 'questions', 'adaptiveMode', 'status'
+                       ]);
+
+      allow update: if isAuthenticated() &&
+                       resource.data.userId == request.auth.uid &&
+                       request.resource.data.userId == resource.data.userId && // Prevent userId change
+                       // Only allow status updates
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']);
+
+      allow delete: if isAuthenticated() &&
+                       resource.data.userId == request.auth.uid;
+    }
+
+    // Study Buddy Quiz Attempts
+    // Users can only access their own quiz attempts
+    match /study_buddy_quiz_attempts/{attemptId} {
+      allow read: if isAuthenticated() &&
+                     resource.data.userId == request.auth.uid;
+
+      allow create: if isAuthenticated() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.keys().hasAll([
+                         'attemptId', 'quizId', 'userId', 'startedAt', 'answers',
+                         'score', 'totalQuestions', 'correctCount'
+                       ]) &&
+                       // Verify the quiz belongs to the user
+                       get(/databases/$(database)/documents/study_buddy_quizzes/$(request.resource.data.quizId)).data.userId == request.auth.uid;
+
+      // Attempts are immutable after creation
+      allow update, delete: if false;
+    }
+
+    // Study Buddy Revision Plans
+    // Users can only access their own revision plans
+    match /study_buddy_revision_plans/{planId} {
+      allow read: if isAuthenticated() &&
+                     resource.data.userId == request.auth.uid;
+
+      allow create: if isAuthenticated() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.keys().hasAll([
+                         'planId', 'userId', 'subjectId', 'subjectName', 'examDate',
+                         'createdAt', 'dailyTasks', 'totalEstimatedHours',
+                         'completionPercentage', 'lastUpdated'
+                       ]);
+
+      allow update: if isAuthenticated() &&
+                       resource.data.userId == request.auth.uid &&
+                       request.resource.data.userId == resource.data.userId; // Prevent userId change
+
+      allow delete: if isAuthenticated() &&
+                       resource.data.userId == request.auth.uid;
+    }
+
+    // ========================================================================
+    // ADMIN ONLY ACCESS
+    // ========================================================================
+
+    // Admins can read all Study Buddy data for analytics/support
+    match /study_buddy_conversations/{conversationId} {
+      allow read: if isAdmin();
+    }
+
+    match /study_buddy_messages/{messageId} {
+      allow read: if isAdmin();
+    }
+
+    match /study_buddy_progress/{progressId} {
+      allow read: if isAdmin();
+    }
+
+    match /study_buddy_quizzes/{quizId} {
+      allow read: if isAdmin();
+    }
+
+    match /study_buddy_quiz_attempts/{attemptId} {
+      allow read: if isAdmin();
+    }
+
+    match /study_buddy_revision_plans/{planId} {
+      allow read: if isAdmin();
+    }
+  }
+}

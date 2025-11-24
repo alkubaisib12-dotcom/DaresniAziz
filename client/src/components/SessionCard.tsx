@@ -361,17 +361,17 @@ export function SessionCard({ session, userRole, onChat, onAction }: SessionCard
               </Button>
             )}
 
-            {/* View summary for students */}
+            {/* View lesson report for students */}
             {userRole === "student" && status === "completed" && session.aiSummary && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setShowSummaryDialog(true)}
-                data-testid="button-view-summary"
+                data-testid="button-view-report"
                 className="border-blue-500 text-blue-600"
               >
                 <i className="fas fa-file-alt mr-1" />
-                View Summary
+                View Report
               </Button>
             )}
 
@@ -430,6 +430,7 @@ export function SessionCard({ session, userRole, onChat, onAction }: SessionCard
         session={session}
         open={showSummaryDialog}
         onOpenChange={setShowSummaryDialog}
+        userRole={userRole}
       />
     </Card>
   );

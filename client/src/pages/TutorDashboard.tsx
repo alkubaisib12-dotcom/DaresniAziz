@@ -16,6 +16,8 @@ import { apiRequest } from "@/lib/queryClient";
 import { SessionCard } from "@/components/SessionCard";
 import { ChatWindow } from "@/components/ChatWindow";
 import { Switch } from "@/components/ui/switch";
+import TutorAnalyticsSection from "@/components/TutorAnalyticsSection";
+import PreSessionMemoryGame from "@/components/PreSessionMemoryGame";
 import { useLocation } from "wouter";
 import { Calendar, Clock, CheckCircle, XCircle, AlertCircle, Save, Trash2, Download } from "lucide-react";
 import { format } from "date-fns";
@@ -143,8 +145,9 @@ export default function TutorDashboard() {
     queryKey: ["/api/sessions"],
     enabled: !!user,
     retry: false,
-    refetchInterval: 10000,
+    refetchInterval: 60000, // Optimized: 60s instead of 10s
     refetchOnWindowFocus: true,
+    staleTime: 30000, // Cache for 30s
   });
 
   /** Tutor profile (no polling here; polling lives on PendingApproval page) */
@@ -155,7 +158,7 @@ export default function TutorDashboard() {
     refetchOnMount: "always",
     refetchOnReconnect: true,
     refetchOnWindowFocus: true,
-    staleTime: 0,
+    staleTime: 60000, // Optimized: 60s instead of 0
     select: (p: any) => (p ? { ...p, __approved: isTutorApproved(p) } : p),
   });
 
@@ -771,6 +774,11 @@ export default function TutorDashboard() {
             </Card>
           </div>
         </div>
+
+        {/* Enhanced Analytics Section */}
+        <div className="mt-12">
+          <TutorAnalyticsSection sessions={Array.isArray(sessions) ? sessions : []} />
+        </div>
       </div>
 
       {/* Manage Availability Dialog */}
@@ -976,6 +984,9 @@ export default function TutorDashboard() {
       </Dialog>
 
       {showChat && chatUserId && <ChatWindow userId={chatUserId} onClose={() => setShowChat(false)} />}
+
+      {/* Memory Match Game - has its own floating button */}
+      <PreSessionMemoryGame />
     </div>
   );
 }

@@ -103,8 +103,9 @@ export default function StudentDashboard() {
     queryKey: ["/api/sessions"],
     enabled: !!user,
     retry: false,
-    refetchInterval: 10000,
+    refetchInterval: 60000, // Optimized: 60s instead of 10s
     refetchOnWindowFocus: true,
+    staleTime: 30000, // Cache for 30s
   });
 
   const sortedSessions = useMemo<SessionWithRelations[]>(() => {
@@ -573,6 +574,7 @@ export default function StudentDashboard() {
       {showChat && chatUserId && (
         <ChatWindow userId={chatUserId} onClose={() => setShowChat(false)} />
       )}
+
     </div>
   );
 }

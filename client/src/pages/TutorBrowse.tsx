@@ -148,8 +148,8 @@ export default function TutorBrowse() {
 
       const matchesSearch =
         !term ||
-        tutor.user.firstName?.toLowerCase().includes(term) ||
-        tutor.user.lastName?.toLowerCase().includes(term) ||
+        (tutor.user?.firstName ?? "").toLowerCase().includes(term) ||
+        (tutor.user?.lastName ?? "").toLowerCase().includes(term) ||
         subjectArr.some((raw) => {
           if (typeof raw === "string") {
             return raw.toLowerCase().includes(term);

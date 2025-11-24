@@ -13,3 +13,4 @@ node_modules/
 dist/
 build/server/serviceaccount.json 
 server/serviceaccount.json 
+.env.example

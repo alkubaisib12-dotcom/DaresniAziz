@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatMoney } from "@/lib/currency";
+import { PaymentModal } from "@/components/PaymentModal";
 
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -92,6 +93,9 @@ export function BookingModal({ tutor, onClose, onConfirm }: BookingModalProps) {
 
   // Track specific calendar dates that turned out to have no available slots
   const [unavailableDates, setUnavailableDates] = useState<Set<string>>(new Set());
+
+  // Payment modal state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   // Calculate hourly rate based on selected subject
   const hourlyRate = useMemo(() => {
@@ -220,6 +224,7 @@ export function BookingModal({ tutor, onClose, onConfirm }: BookingModalProps) {
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
       queryClient.invalidateQueries({ queryKey: ["my-sessions"] });
 
+      setShowPaymentModal(false);
       onConfirm();
     },
 
@@ -261,6 +266,13 @@ export function BookingModal({ tutor, onClose, onConfirm }: BookingModalProps) {
       return;
     }
 
+    // Show payment modal instead of directly booking
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentConfirmation = (paymentMethod: string) => {
+    if (!user?.id || !selectedDate || selectedSlots.length === 0) return;
+
     // Use the first selected slot as the start time
     const firstSlot = [...selectedSlots].sort()[0];
     const [hh, mm] = firstSlot.split(":").map((n) => parseInt(n, 10));
@@ -283,10 +295,12 @@ export function BookingModal({ tutor, onClose, onConfirm }: BookingModalProps) {
     };
 
     console.log("📤 Booking session with payload:", payload);
+    console.log("💳 Payment method selected:", paymentMethod);
     m.mutate(payload);
   };
 
   return (
+    <>
     <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="modal-booking">
         <DialogHeader>
@@ -545,5 +559,16 @@ export function BookingModal({ tutor, onClose, onConfirm }: BookingModalProps) {
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Payment Modal */}
+    {showPaymentModal && (
+      <PaymentModal
+        totalAmount={totalPrice}
+        onClose={() => setShowPaymentModal(false)}
+        onConfirmPayment={handlePaymentConfirmation}
+        isProcessing={m.isPending}
+      />
+    )}
+    </>
   );
 }

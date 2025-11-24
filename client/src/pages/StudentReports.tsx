@@ -1,12 +1,15 @@
 // client/src/pages/StudentReports.tsx
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchSessions } from "@/lib/api";
 import type { ApiSession } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SessionQuizDialog } from "@/components/SessionQuizDialog";
 
 // Helper to normalize Firestore timestamps
 function normalizeDate(raw: any): Date {
@@ -50,19 +53,21 @@ export default function StudentReports() {
 
   if (isLoading) {
     return (
-      <div className="container mx-auto py-8 px-4">
-        <h1 className="text-3xl font-bold mb-6">My Lesson Reports</h1>
-        <div className="space-y-4">
-          {[1, 2, 3].map((i) => (
-            <Card key={i}>
-              <CardHeader>
-                <Skeleton className="h-6 w-3/4" />
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="h-20 w-full" />
-              </CardContent>
-            </Card>
-          ))}
+      <div className="min-h-screen bg-background pt-20">
+        <div className="container mx-auto py-8 px-4">
+          <h1 className="text-3xl font-bold mb-6">My Lesson Reports</h1>
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <Card key={i}>
+                <CardHeader>
+                  <Skeleton className="h-6 w-3/4" />
+                </CardHeader>
+                <CardContent>
+                  <Skeleton className="h-20 w-full" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -70,19 +75,22 @@ export default function StudentReports() {
 
   if (error) {
     return (
-      <div className="container mx-auto py-8 px-4">
-        <h1 className="text-3xl font-bold mb-6">My Lesson Reports</h1>
-        <Alert variant="destructive">
-          <AlertDescription>
-            Failed to load reports. Please try again later.
-          </AlertDescription>
-        </Alert>
+      <div className="min-h-screen bg-background pt-20">
+        <div className="container mx-auto py-8 px-4">
+          <h1 className="text-3xl font-bold mb-6">My Lesson Reports</h1>
+          <Alert variant="destructive">
+            <AlertDescription>
+              Failed to load reports. Please try again later.
+            </AlertDescription>
+          </Alert>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto py-8 px-4">
+    <div className="min-h-screen bg-background pt-20">
+      <div className="container mx-auto py-8 px-4">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-2">My Lesson Reports</h1>
         <p className="text-muted-foreground">
@@ -113,17 +121,20 @@ export default function StudentReports() {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }
 
 function LessonReportCard({ session }: { session: ApiSession }) {
+  const [showQuizDialog, setShowQuizDialog] = useState(false);
   const scheduledDate = normalizeDate(session.scheduledAt);
   const generatedDate = session.aiSummary?.generatedAt
     ? normalizeDate(session.aiSummary.generatedAt)
     : null;
 
   return (
+    <>
     <Card className="overflow-hidden">
       <CardHeader className="bg-gradient-to-r from-blue-50 to-purple-50 border-b">
         <div className="flex items-start justify-between">
@@ -208,16 +219,35 @@ function LessonReportCard({ session }: { session: ApiSession }) {
         </div>
 
         {/* Footer */}
-        <div className="pt-4 border-t flex items-center justify-between text-xs text-muted-foreground">
-          <span>Session ID: {session.id.slice(0, 8)}</span>
-          {generatedDate && (
-            <span className="flex items-center gap-1">
-              <i className="fas fa-clock" />
-              Summary generated on {format(generatedDate, "MMM dd, yyyy 'at' HH:mm")}
-            </span>
-          )}
+        <div className="pt-4 border-t">
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-muted-foreground">Session ID: {session.id.slice(0, 8)}</span>
+              {generatedDate && (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <i className="fas fa-clock" />
+                  Summary generated on {format(generatedDate, "MMM dd, yyyy 'at' HH:mm")}
+                </span>
+              )}
+            </div>
+            <Button
+              onClick={() => setShowQuizDialog(true)}
+              className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+            >
+              <i className="fas fa-clipboard-question mr-2" />
+              Take Improvement Quiz
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>
+
+    {/* Quiz Dialog */}
+    <SessionQuizDialog
+      sessionId={session.id}
+      open={showQuizDialog}
+      onOpenChange={setShowQuizDialog}
+    />
+    </>
   );
 }

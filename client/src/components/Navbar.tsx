@@ -9,10 +9,27 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
+  DropdownMenuGroup,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/hooks/use-toast";
+import {
+  User,
+  Settings,
+  Bell,
+  LogOut,
+  Home,
+  Calendar,
+  FileText,
+  Search,
+  IdCard,
+  Sparkles,
+  Gamepad2,
+  BookOpen,
+  GraduationCap,
+} from "lucide-react";
 
 type Role = "student" | "tutor" | "admin" | null;
 
@@ -58,8 +75,8 @@ export default function Navbar() {
       const json = await res.json();
       return Number(json?.unread ?? 0);
     },
-    refetchInterval: 15_000,
-    staleTime: 10_000,
+    refetchInterval: 30_000, // Optimized: 30s instead of 15s
+    staleTime: 20_000, // Optimized: 20s instead of 10s
   });
 
   const handleLogout = async () => {
@@ -197,96 +214,233 @@ export default function Navbar() {
                 </Button>
               </DropdownMenuTrigger>
 
-              <DropdownMenuContent className="w-56" align="end" forceMount>
-                <div className="flex items-center justify-start gap-2 p-2">
-                  <div className="flex flex-col space-y-1 leading-none">
-                    <p className="font-medium">
+              <DropdownMenuContent className="w-72" align="end" forceMount>
+                {/* Profile Header */}
+                <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950 dark:to-purple-950">
+                  <Avatar className="h-12 w-12 border-2 border-white">
+                    <AvatarImage
+                      src={user?.profileImageUrl || undefined}
+                      alt={user?.firstName || "User"}
+                    />
+                    <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-500 text-white">
+                      {(user?.firstName?.[0] || "").toUpperCase()}
+                      {(user?.lastName?.[0] || "").toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col flex-1 min-w-0">
+                    <p className="font-semibold text-sm truncate">
                       {user?.firstName} {user?.lastName}
                     </p>
-                    <p className="w-[200px] truncate text-sm text-muted-foreground">
+                    <p className="text-xs text-muted-foreground truncate">
                       {user?.email}
                     </p>
                   </div>
                 </div>
+
                 <DropdownMenuSeparator />
 
-                <DropdownMenuItem
-                  onClick={() => navigate("/")}
-                  data-testid="menu-item-dashboard"
-                >
-                  <i className="fas fa-home mr-2" />
-                  Dashboard
-                </DropdownMenuItem>
+                {/* Navigation Section */}
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Navigation
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onClick={() => navigate("/")}
+                    data-testid="menu-item-dashboard"
+                  >
+                    <Home className="mr-2 h-4 w-4" />
+                    Dashboard
+                  </DropdownMenuItem>
 
-                {me?.user?.role === "student" && (
-                  <>
+                  {me?.user?.role === "student" && (
                     <DropdownMenuItem
                       onClick={() => navigate("/tutors")}
                       data-testid="menu-item-find-tutors"
                     >
-                      <i className="fas fa-search mr-2" />
+                      <Search className="mr-2 h-4 w-4" />
                       Find Tutors
                     </DropdownMenuItem>
+                  )}
+
+                  {canShowPublic && (
                     <DropdownMenuItem
-                      onClick={() => navigate("/my-sessions")}
-                      data-testid="menu-item-my-sessions"
+                      onClick={() =>
+                        navigate(`/tutors/${me!.tutorProfile!.id}`)
+                      }
+                      data-testid="menu-item-public-profile"
                     >
-                      <i className="fas fa-calendar mr-2" />
-                      My Sessions
+                      <IdCard className="mr-2 h-4 w-4" />
+                      Public Profile
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => navigate("/student-reports")}
-                      data-testid="menu-item-student-reports"
-                    >
-                      <i className="fas fa-file-alt mr-2" />
-                      Lesson Reports
-                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuGroup>
+
+                <DropdownMenuSeparator />
+
+                {/* Learning Section */}
+                {me?.user?.role === "student" && (
+                  <>
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        <GraduationCap className="inline mr-1.5 h-3.5 w-3.5" />
+                        Learning
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem
+                        onClick={() => navigate("/my-sessions")}
+                        data-testid="menu-item-my-sessions"
+                      >
+                        <Calendar className="mr-2 h-4 w-4" />
+                        My Sessions
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => navigate("/student-reports")}
+                        data-testid="menu-item-student-reports"
+                      >
+                        <FileText className="mr-2 h-4 w-4" />
+                        Lesson Reports
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          // Open AI Study Buddy
+                          const event = new CustomEvent("open-study-buddy");
+                          window.dispatchEvent(event);
+                        }}
+                        data-testid="menu-item-ai-study-buddy"
+                      >
+                        <Sparkles className="mr-2 h-4 w-4 text-purple-500" />
+                        <span className="flex-1">AI Study Buddy</span>
+                        <Badge variant="secondary" className="text-xs">
+                          Free
+                        </Badge>
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+
+                    <DropdownMenuSeparator />
+
+                    {/* Games Section */}
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        <Gamepad2 className="inline mr-1.5 h-3.5 w-3.5" />
+                        Mini Games
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          // Open memory match game
+                          const event = new CustomEvent("open-memory-game");
+                          window.dispatchEvent(event);
+                        }}
+                        data-testid="menu-item-memory-game"
+                      >
+                        <i className="fas fa-brain mr-2 w-4" />
+                        Memory Match
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          // Future: Add more games
+                          toast({
+                            title: "Coming Soon!",
+                            description: "More games will be available soon.",
+                          });
+                        }}
+                        data-testid="menu-item-more-games"
+                        className="text-muted-foreground"
+                      >
+                        <Gamepad2 className="mr-2 h-4 w-4" />
+                        More Games
+                        <Badge variant="outline" className="ml-auto text-xs">
+                          Soon
+                        </Badge>
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+
+                    <DropdownMenuSeparator />
                   </>
                 )}
 
+                {/* For Tutors */}
                 {me?.user?.role === "tutor" && (
                   <>
-                    <DropdownMenuItem
-                      onClick={() => navigate("/my-sessions")}
-                      data-testid="menu-item-my-sessions"
-                    >
-                      <i className="fas fa-calendar mr-2" />
-                      My Sessions
-                    </DropdownMenuItem>
-                    {canShowPublic && (
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        Teaching
+                      </DropdownMenuLabel>
                       <DropdownMenuItem
-                        onClick={() =>
-                          navigate(`/tutors/${me!.tutorProfile!.id}`)
-                        }
-                        data-testid="menu-item-public-profile"
+                        onClick={() => navigate("/my-sessions")}
+                        data-testid="menu-item-my-sessions"
                       >
-                        <i className="fas fa-id-badge mr-2" />
-                        View Public Profile
+                        <Calendar className="mr-2 h-4 w-4" />
+                        My Sessions
                       </DropdownMenuItem>
-                    )}
+                    </DropdownMenuGroup>
+
+                    <DropdownMenuSeparator />
+
+                    {/* Games Section for Tutors */}
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        <Gamepad2 className="inline mr-1.5 h-3.5 w-3.5" />
+                        Mini Games
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          // Open memory match game
+                          const event = new CustomEvent("open-memory-game");
+                          window.dispatchEvent(event);
+                        }}
+                        data-testid="menu-item-memory-game-tutor"
+                      >
+                        <i className="fas fa-brain mr-2 w-4" />
+                        Memory Match
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          // Future: Add more games
+                          toast({
+                            title: "Coming Soon!",
+                            description: "More games will be available soon.",
+                          });
+                        }}
+                        data-testid="menu-item-more-games-tutor"
+                        className="text-muted-foreground"
+                      >
+                        <Gamepad2 className="mr-2 h-4 w-4" />
+                        More Games
+                        <Badge variant="outline" className="ml-auto text-xs">
+                          Soon
+                        </Badge>
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
+
+                    <DropdownMenuSeparator />
                   </>
                 )}
 
-                <DropdownMenuItem
-                  onClick={() => navigate("/profile-settings")}
-                  data-testid="menu-item-profile"
-                >
-                  <i className="fas fa-user mr-2" />
-                  Profile Settings
-                </DropdownMenuItem>
+                {/* Settings Section */}
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Settings
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem
+                    onClick={() => navigate("/profile-settings")}
+                    data-testid="menu-item-profile"
+                  >
+                    <User className="mr-2 h-4 w-4" />
+                    Profile Settings
+                  </DropdownMenuItem>
 
-                <DropdownMenuItem
-                  onClick={() => navigate("/notifications")}
-                  data-testid="menu-item-notifications"
-                >
-                  <i className="fas fa-bell mr-2" />
-                  Notifications
-                  {unread > 0 && (
-                    <span className="ml-auto inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-600 px-1.5 text-[11px] font-semibold text-white">
-                      {unreadBadgeText}
-                    </span>
-                  )}
-                </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => navigate("/notifications")}
+                    data-testid="menu-item-notifications"
+                  >
+                    <Bell className="mr-2 h-4 w-4" />
+                    Notifications
+                    {unread > 0 && (
+                      <Badge variant="destructive" className="ml-auto text-xs">
+                        {unreadBadgeText}
+                      </Badge>
+                    )}
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
 
                 <DropdownMenuSeparator />
 
@@ -295,7 +449,7 @@ export default function Navbar() {
                   className="text-destructive focus:text-destructive"
                   data-testid="menu-item-logout"
                 >
-                  <i className="fas fa-sign-out-alt mr-2" />
+                  <LogOut className="mr-2 h-4 w-4" />
                   Log out
                 </DropdownMenuItem>
               </DropdownMenuContent>

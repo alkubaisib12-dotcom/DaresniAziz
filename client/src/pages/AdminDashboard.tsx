@@ -9,6 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/components/AuthProvider";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format } from "date-fns";
 
 import {
   Bell,
@@ -25,7 +28,16 @@ import {
   Eye,
   MessageSquare,
   XCircle,
+  TrendingUp,
+  DollarSign,
+  BarChart3,
+  Activity,
+  Calendar,
+  CalendarIcon,
+  Filter,
+  X,
 } from "lucide-react";
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,6 +56,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ChatHistoryDialog } from "@/components/ChatHistoryDialog";
+import { MessageSquare } from "lucide-react";
 
 interface Notification {
   id: string;
@@ -62,6 +76,7 @@ interface TutorProfile {
     bio: string;
     phone: string;
     hourlyRate: number;
+    subjectPricing?: Record<string, number>; // subject-specific pricing
     experience: string;
     education: string;
     isVerified: boolean;
@@ -96,35 +111,52 @@ interface AdminUser {
   createdAt: string;
 }
 
-interface BasicUser {
-  id: string;
-  email: string;
-  firstName: string | null;
-  lastName: string | null;
-  role?: string | null;
+interface StudentDetails {
+  student: Student;
+  sessions: any[];
+  stats: {
+    totalSessions: number;
+    completedSessions: number;
+    upcomingSessions: number;
+    cancelledSessions: number;
+  };
 }
 
-interface AdminMessage {
-  id: string;
-  senderId: string;
-  receiverId: string;
-  studentId: string;
-  tutorId: string;
-  content: string;
-  read: boolean;
-  createdAt: string;
-  conversationKey: string;
-  sender?: BasicUser | null;
-  receiver?: BasicUser | null;
-  student?: BasicUser | null;
-  tutor?: BasicUser | null;
+interface TutorSessions {
+  sessions: any[];
+  stats: {
+    totalSessions: number;
+    completedSessions: number;
+    upcomingSessions: number;
+    cancelledSessions: number;
+  };
 }
 
-const formatUserName = (user?: { firstName: string | null; lastName: string | null; email?: string } | null) => {
-  if (!user) return "Unknown user";
-  const full = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-  return full || user.email || "Unknown user";
-};
+interface AnalyticsData {
+  userGrowth: Array<{ date: string; students: number; tutors: number }>;
+  sessionStats: {
+    completed: number;
+    scheduled: number;
+    pending: number;
+    cancelled: number;
+    inProgress: number;
+  };
+  subjectStats: Array<{ name: string; sessions: number }>;
+  overview: {
+    totalStudents: number;
+    totalTutors: number;
+    verifiedTutors: number;
+    totalSessions: number;
+    completedSessions: number;
+    completionRate: number;
+    totalRevenue: number;
+  };
+  recentActivity: Array<{
+    id: string;
+    status: string;
+    scheduledAt: string;
+  }>;
+}
 
 export default function AdminDashboard() {
   const { toast } = useToast();
@@ -135,25 +167,167 @@ export default function AdminDashboard() {
   const isAdmin = user?.role === "admin";
 
   const [currentTab, setCurrentTab] = useState<
-    "pending" | "notifications" | "students" | "tutors" | "admins"
-  >("pending");
+    "analytics" | "pending" | "notifications" | "students" | "tutors" | "admins"
+  >("analytics");
   const [userToDelete, setUserToDelete] = useState<{ id: string; type: string; name: string } | null>(
     null,
   );
   const [selectedTutor, setSelectedTutor] = useState<TutorProfile | null>(null);
   const [tutorToReject, setTutorToReject] = useState<TutorProfile | null>(null);
-  const [chatViewer, setChatViewer] = useState<
-    { mode: "student" | "tutor"; userId: string; name: string } | null
-  >(null);
-  const [activeConversationKey, setActiveConversationKey] = useState<string | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [selectedTutorForSessions, setSelectedTutorForSessions] = useState<TutorProfile | null>(null);
+  const [studentChatHistory, setStudentChatHistory] = useState<{ id: string; name: string } | null>(null);
+  const [tutorChatHistory, setTutorChatHistory] = useState<{ id: string; name: string } | null>(null);
 
-  const openChatHistory = (mode: "student" | "tutor", userId: string, name: string) => {
-    setChatViewer({ mode, userId, name });
+  // Date range filter state
+  type DatePreset = "all" | "today" | "week" | "month" | "year" | "custom";
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [fromDate, setFromDate] = useState<Date | undefined>(undefined);
+  const [toDate, setToDate] = useState<Date | undefined>(undefined);
+
+  // Date range filter helpers
+  const setDateRange = (preset: DatePreset) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    setDatePreset(preset);
+
+    switch (preset) {
+      case "all":
+        setFromDate(undefined);
+        setToDate(undefined);
+        break;
+      case "today":
+        setFromDate(today);
+        setToDate(new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1));
+        break;
+      case "week":
+        const weekAgo = new Date(today);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        setFromDate(weekAgo);
+        setToDate(now);
+        break;
+      case "month":
+        const monthAgo = new Date(today);
+        monthAgo.setMonth(monthAgo.getMonth() - 1);
+        setFromDate(monthAgo);
+        setToDate(now);
+        break;
+      case "year":
+        const yearAgo = new Date(today);
+        yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+        setFromDate(yearAgo);
+        setToDate(now);
+        break;
+      case "custom":
+        // Keep existing dates for custom range
+        break;
+    }
   };
 
-  const closeChatHistory = () => {
-    setChatViewer(null);
-    setActiveConversationKey(null);
+  const isDateInRange = (dateString: string) => {
+    if (!fromDate && !toDate) return true;
+
+    const date = new Date(dateString);
+    if (fromDate && date < fromDate) return false;
+    if (toDate && date > toDate) return false;
+
+    return true;
+  };
+
+  // Helper function to safely format dates
+  const formatDate = (dateValue: any): string => {
+    if (!dateValue) return "N/A";
+
+    try {
+      let date: Date;
+
+      // Handle Firestore Timestamp objects
+      if (dateValue?.toDate && typeof dateValue.toDate === 'function') {
+        date = dateValue.toDate();
+      }
+      // Handle Firestore Timestamp with _seconds
+      else if (dateValue?._seconds) {
+        date = new Date(dateValue._seconds * 1000);
+      }
+      // Handle Date objects
+      else if (dateValue instanceof Date) {
+        date = dateValue;
+      }
+      // Handle string/number
+      else {
+        date = new Date(dateValue);
+      }
+
+      // Validate the date
+      if (isNaN(date.getTime())) return "N/A";
+
+      return date.toLocaleDateString();
+    } catch (error) {
+      console.error("Error formatting date:", error, dateValue);
+      return "N/A";
+    }
+  };
+
+  // Helper function to safely format date and time
+  const formatDateTime = (dateValue: any): string => {
+    if (!dateValue) return "N/A";
+
+    try {
+      let date: Date;
+
+      // Handle Firestore Timestamp objects
+      if (dateValue?.toDate && typeof dateValue.toDate === 'function') {
+        date = dateValue.toDate();
+      }
+      // Handle Firestore Timestamp with _seconds
+      else if (dateValue?._seconds) {
+        date = new Date(dateValue._seconds * 1000);
+      }
+      // Handle Date objects
+      else if (dateValue instanceof Date) {
+        date = dateValue;
+      }
+      // Handle string/number
+      else {
+        date = new Date(dateValue);
+      }
+
+      // Validate the date
+      if (isNaN(date.getTime())) return "N/A";
+
+      return date.toLocaleString();
+    } catch (error) {
+      console.error("Error formatting date:", error, dateValue);
+      return "N/A";
+    }
+  };
+
+  // Helper function to get tutor pricing display
+  const getTutorPricing = (tutor: TutorProfile): string => {
+    const { subjectPricing, hourlyRate } = tutor.profile;
+
+    // If subjectPricing exists and has values, use it
+    if (subjectPricing && Object.keys(subjectPricing).length > 0) {
+      const prices = Object.values(subjectPricing).filter(p => p > 0);
+      if (prices.length === 0) return "Not set";
+
+      const minPrice = Math.min(...prices);
+      const maxPrice = Math.max(...prices);
+
+      if (minPrice === maxPrice) {
+        return formatMoney(minPrice) + "/hour";
+      } else {
+        return `${formatMoney(minPrice)} - ${formatMoney(maxPrice)}/hour`;
+      }
+    }
+
+    // Fallback to hourlyRate (deprecated field)
+    if (hourlyRate && hourlyRate > 0) {
+      return formatMoney(hourlyRate) + "/hour";
+    }
+
+    return "Not set";
   };
 
   // Redirect away if not admin (runs after first render)
@@ -163,22 +337,19 @@ export default function AdminDashboard() {
     }
   }, [authLoading, isAdmin, navigate]);
 
-  useEffect(() => {
-    if (!chatViewer) {
-      setActiveConversationKey(null);
-      return;
-    }
-
-    const keys = Array.from(new Set(chatHistory?.messages?.map((m) => m.conversationKey) || []));
-    if (keys.length === 0) {
-      setActiveConversationKey(null);
-      return;
-    }
-
-    if (!activeConversationKey || !keys.includes(activeConversationKey)) {
-      setActiveConversationKey(keys[0]);
-    }
-  }, [activeConversationKey, chatHistory, chatViewer]);
+  // Fetch analytics data
+  const { data: analytics, isLoading: analyticsLoading } = useQuery<AnalyticsData>({
+    queryKey: ["/api/admin/analytics", fromDate?.toISOString(), toDate?.toISOString()],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (fromDate) params.append("fromDate", fromDate.toISOString());
+      if (toDate) params.append("toDate", toDate.toISOString());
+      const url = `/api/admin/analytics${params.toString() ? `?${params.toString()}` : ""}`;
+      return apiRequest(url);
+    },
+    enabled: isAdmin && currentTab === "analytics",
+    staleTime: 60000, // Cache for 1 minute
+  });
 
   // Fetch notifications
   const {
@@ -220,17 +391,19 @@ export default function AdminDashboard() {
     enabled: isAdmin && currentTab === "admins",
   });
 
-  const { data: chatHistory, isLoading: chatHistoryLoading } = useQuery<{ messages: AdminMessage[] }>(
-    {
-      queryKey: ["/api/admin/messages", chatViewer?.mode, chatViewer?.userId],
-      queryFn: async () => {
-        if (!chatViewer) return { messages: [] };
-        const param = chatViewer.mode === "student" ? `studentId=${chatViewer.userId}` : `tutorId=${chatViewer.userId}`;
-        return apiRequest(`/api/admin/messages?${param}`);
-      },
-      enabled: isAdmin && !!chatViewer,
-    },
-  );
+  // Fetch student details with sessions
+  const { data: studentDetails, isLoading: studentDetailsLoading } = useQuery<StudentDetails>({
+    queryKey: ["/api/admin/students", selectedStudent?.id, "details"],
+    queryFn: () => apiRequest(`/api/admin/students/${selectedStudent?.id}/details`),
+    enabled: !!selectedStudent?.id,
+  });
+
+  // Fetch tutor sessions
+  const { data: tutorSessions, isLoading: tutorSessionsLoading } = useQuery<TutorSessions>({
+    queryKey: ["/api/admin/tutors", selectedTutorForSessions?.user?.id, "sessions"],
+    queryFn: () => apiRequest(`/api/admin/tutors/${selectedTutorForSessions?.user?.id}/sessions`),
+    enabled: !!selectedTutorForSessions?.user?.id,
+  });
 
   // Mark notification as read
   const markAsReadMutation = useMutation({
@@ -375,6 +548,30 @@ export default function AdminDashboard() {
     },
   });
 
+  // Mark all notifications as read
+  const markAllAsReadMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("/api/admin/notifications/mark-all-read", {
+        method: "POST",
+      });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/notifications"] });
+      toast({
+        title: "Success",
+        description: `Marked ${data.count} notification${data.count !== 1 ? 's' : ''} as read`,
+      });
+    },
+    onError: (error: any) => {
+      console.error("Error marking notifications as read:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to mark notifications as read",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleDeleteUser = () => {
     if (!userToDelete) return;
 
@@ -387,8 +584,16 @@ export default function AdminDashboard() {
     }
   };
 
+  // Apply date filters to all data
+  const filteredNotifications = notifications.filter((n) => isDateInRange(n.createdAt));
+  const filteredPendingTutors = pendingTutors.filter((t) => isDateInRange(t.profile.createdAt));
+  const filteredStudents = students.filter((s) => isDateInRange(s.createdAt));
+  const filteredAllTutors = allTutors.filter((t) => isDateInRange(t.profile.createdAt));
+  const filteredAdminUsers = adminUsers.filter((a) => isDateInRange(a.createdAt));
+
+  // Count ALL unread notifications (not just filtered) for the "Mark All as Read" button
   const unreadCount = notifications.filter((n) => !n.isRead).length;
-  const pendingCount = pendingTutors.length;
+  const pendingCount = filteredPendingTutors.length;
 
   const chatMessages = chatHistory?.messages || [];
   const conversationMap = new Map<
@@ -439,6 +644,122 @@ export default function AdminDashboard() {
         </p>
       </div>
 
+      {/* Date Range Filter */}
+      <Card className="mb-6">
+        <CardContent className="p-4">
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+            <div className="flex items-center gap-2">
+              <Filter className="h-5 w-5 text-muted-foreground" />
+              <span className="font-medium">Filter by Date:</span>
+            </div>
+
+            {/* Preset Buttons */}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={datePreset === "all" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDateRange("all")}
+              >
+                All Time
+              </Button>
+              <Button
+                variant={datePreset === "today" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDateRange("today")}
+              >
+                Today
+              </Button>
+              <Button
+                variant={datePreset === "week" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDateRange("week")}
+              >
+                Last 7 Days
+              </Button>
+              <Button
+                variant={datePreset === "month" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDateRange("month")}
+              >
+                Last 30 Days
+              </Button>
+              <Button
+                variant={datePreset === "year" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setDateRange("year")}
+              >
+                Last Year
+              </Button>
+            </div>
+
+            {/* Custom Date Range Pickers */}
+            <div className="flex items-center gap-2 ml-auto">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={datePreset === "custom" ? "border-primary" : ""}
+                  >
+                    <CalendarIcon className="h-4 w-4 mr-2" />
+                    {fromDate ? format(fromDate, "MMM dd, yyyy") : "From Date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    mode="single"
+                    selected={fromDate}
+                    onSelect={(date) => {
+                      setFromDate(date);
+                      setDatePreset("custom");
+                    }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+
+              <span className="text-muted-foreground">to</span>
+
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={datePreset === "custom" ? "border-primary" : ""}
+                  >
+                    <CalendarIcon className="h-4 w-4 mr-2" />
+                    {toDate ? format(toDate, "MMM dd, yyyy") : "To Date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    mode="single"
+                    selected={toDate}
+                    onSelect={(date) => {
+                      setToDate(date);
+                      setDatePreset("custom");
+                    }}
+                    initialFocus
+                    disabled={(date) => fromDate ? date < fromDate : false}
+                  />
+                </PopoverContent>
+              </Popover>
+
+              {(fromDate || toDate) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setDateRange("all")}
+                  className="h-8 w-8 p-0"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <Card
@@ -466,7 +787,7 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Students</p>
-                <p className="text-2xl font-bold">{students.length}</p>
+                <p className="text-2xl font-bold">{filteredStudents.length}</p>
               </div>
               <BookOpen className="h-8 w-8 text-blue-600" />
             </div>
@@ -479,7 +800,7 @@ export default function AdminDashboard() {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Verified Tutors</p>
                 <p className="text-2xl font-bold">
-                  {allTutors.filter((t) => t.profile.isVerified).length}
+                  {filteredAllTutors.filter((t) => t.profile.isVerified).length}
                 </p>
               </div>
               <GraduationCap className="h-8 w-8 text-[#9B1B30]" />
@@ -506,10 +827,14 @@ export default function AdminDashboard() {
         onValueChange={(v: any) => setCurrentTab(v)}
         className="space-y-6"
       >
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
+          <TabsTrigger value="analytics">
+            <BarChart3 className="h-4 w-4 mr-2" />
+            Analytics
+          </TabsTrigger>
           <TabsTrigger value="pending" className="relative">
             <Clock className="h-4 w-4 mr-2" />
-            Pending Review
+            Pending
             {pendingCount > 0 && (
               <Badge
                 variant="destructive"
@@ -521,7 +846,7 @@ export default function AdminDashboard() {
           </TabsTrigger>
           <TabsTrigger value="notifications">
             <Bell className="h-4 w-4 mr-2" />
-            Notifications
+            Alerts
             {unreadCount > 0 && <Badge variant="destructive">{unreadCount}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="students">
@@ -530,13 +855,239 @@ export default function AdminDashboard() {
           </TabsTrigger>
           <TabsTrigger value="tutors">
             <GraduationCap className="h-4 w-4 mr-2" />
-            All Tutors
+            Tutors
           </TabsTrigger>
           <TabsTrigger value="admins">
             <Shield className="h-4 w-4 mr-2" />
             Admins
           </TabsTrigger>
         </TabsList>
+
+        {/* ANALYTICS TAB */}
+        <TabsContent value="analytics">
+          {analyticsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#9B1B30]" />
+            </div>
+          ) : analytics ? (
+            <div className="space-y-6">
+              {/* Overview Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Total Sessions</p>
+                        <p className="text-3xl font-bold">{analytics.overview.totalSessions}</p>
+                        <p className="text-xs text-green-600 mt-1">
+                          {analytics.overview.completedSessions} completed
+                        </p>
+                      </div>
+                      <Activity className="h-10 w-10 text-blue-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Completion Rate</p>
+                        <p className="text-3xl font-bold">{analytics.overview.completionRate}%</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Success metric
+                        </p>
+                      </div>
+                      <TrendingUp className="h-10 w-10 text-green-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Total Revenue</p>
+                        <p className="text-3xl font-bold">{formatMoney(analytics.overview.totalRevenue)}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          From completed sessions
+                        </p>
+                      </div>
+                      <DollarSign className="h-10 w-10 text-[#9B1B30]" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Active Tutors</p>
+                        <p className="text-3xl font-bold">{analytics.overview.verifiedTutors}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {analytics.overview.totalTutors} total
+                        </p>
+                      </div>
+                      <Users className="h-10 w-10 text-purple-600" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Charts Row */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* User Growth Chart */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      User Growth (Last 30 Days)
+                    </CardTitle>
+                    <CardDescription>Students and tutors registered over time</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={analytics.userGrowth}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="date"
+                          tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          fontSize={12}
+                        />
+                        <YAxis fontSize={12} />
+                        <Tooltip
+                          labelFormatter={(value) => new Date(value).toLocaleDateString()}
+                          contentStyle={{ fontSize: 12 }}
+                        />
+                        <Legend />
+                        <Line type="monotone" dataKey="students" stroke="#3b82f6" strokeWidth={2} name="Students" />
+                        <Line type="monotone" dataKey="tutors" stroke="#9B1B30" strokeWidth={2} name="Tutors" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+
+                {/* Session Status Distribution */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <BarChart3 className="h-5 w-5" />
+                      Session Status Distribution
+                    </CardTitle>
+                    <CardDescription>Breakdown of all sessions by status</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: 'Completed', value: analytics.sessionStats.completed, color: '#10b981' },
+                            { name: 'Scheduled', value: analytics.sessionStats.scheduled, color: '#3b82f6' },
+                            { name: 'Pending', value: analytics.sessionStats.pending, color: '#f59e0b' },
+                            { name: 'Cancelled', value: analytics.sessionStats.cancelled, color: '#ef4444' },
+                            { name: 'In Progress', value: analytics.sessionStats.inProgress, color: '#8b5cf6' },
+                          ].filter(item => item.value > 0)}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                          outerRadius={100}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {[
+                            { name: 'Completed', value: analytics.sessionStats.completed, color: '#10b981' },
+                            { name: 'Scheduled', value: analytics.sessionStats.scheduled, color: '#3b82f6' },
+                            { name: 'Pending', value: analytics.sessionStats.pending, color: '#f59e0b' },
+                            { name: 'Cancelled', value: analytics.sessionStats.cancelled, color: '#ef4444' },
+                            { name: 'In Progress', value: analytics.sessionStats.inProgress, color: '#8b5cf6' },
+                          ].filter(item => item.value > 0).map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Popular Subjects Bar Chart */}
+              {analytics.subjectStats.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <BookOpen className="h-5 w-5" />
+                      Most Popular Subjects
+                    </CardTitle>
+                    <CardDescription>Subjects with the highest number of sessions</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart data={analytics.subjectStats}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" fontSize={12} angle={-45} textAnchor="end" height={100} />
+                        <YAxis fontSize={12} />
+                        <Tooltip contentStyle={{ fontSize: 12 }} />
+                        <Bar dataKey="sessions" fill="#9B1B30" name="Sessions" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Quick Stats Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
+                  <CardContent className="p-6">
+                    <div className="text-center">
+                      <BookOpen className="h-8 w-8 mx-auto mb-2 text-blue-600" />
+                      <p className="text-sm font-medium text-muted-foreground">Total Students</p>
+                      <p className="text-4xl font-bold text-blue-900 my-2">{analytics.overview.totalStudents}</p>
+                      <p className="text-xs text-blue-700">Registered on platform</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-purple-50 to-purple-100">
+                  <CardContent className="p-6">
+                    <div className="text-center">
+                      <GraduationCap className="h-8 w-8 mx-auto mb-2 text-purple-600" />
+                      <p className="text-sm font-medium text-muted-foreground">Total Tutors</p>
+                      <p className="text-4xl font-bold text-purple-900 my-2">{analytics.overview.totalTutors}</p>
+                      <p className="text-xs text-purple-700">
+                        {analytics.overview.verifiedTutors} verified
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-gradient-to-br from-green-50 to-green-100">
+                  <CardContent className="p-6">
+                    <div className="text-center">
+                      <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-600" />
+                      <p className="text-sm font-medium text-muted-foreground">Completed Sessions</p>
+                      <p className="text-4xl font-bold text-green-900 my-2">{analytics.overview.completedSessions}</p>
+                      <p className="text-xs text-green-700">
+                        {analytics.overview.completionRate}% completion rate
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <AlertCircle className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+                <p className="text-lg font-medium">No analytics data available</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Data will appear once there is activity on the platform
+                </p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
 
         {/* PENDING TUTORS TAB */}
         <TabsContent value="pending">
@@ -570,12 +1121,11 @@ export default function AdminDashboard() {
               ) : pendingCount === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <CheckCircle className="h-16 w-16 mx-auto mb-4 text-green-500" />
-                  <p className="text-lg font-medium">All caught up!</p>
-                  <p className="text-sm">No pending tutor applications to review.</p>
+                  <p className="text-lg font-medium">No pending tutor</p>
                 </div>
               ) : (
                 <div className="space-y-6">
-                  {pendingTutors.map((tutor) => (
+                  {filteredPendingTutors.map((tutor) => (
                     <Card
                       key={tutor.profile.id}
                       className="border-2 border-orange-200 bg-orange-50/50"
@@ -608,9 +1158,8 @@ export default function AdminDashboard() {
                           <div>
                             <p className="font-medium text-muted-foreground">Hourly Rate</p>
                             <p className="text-lg font-semibold">
-  {formatMoney(tutor.profile.hourlyRate)}/hr
-</p>
-
+                              {getTutorPricing(tutor)}
+                            </p>
                           </div>
                           <div>
                             <p className="font-medium text-muted-foreground">Phone</p>
@@ -623,9 +1172,7 @@ export default function AdminDashboard() {
                           <div>
                             <p className="font-medium text-muted-foreground">Applied</p>
                             <p>
-                              {new Date(
-                                tutor.profile.createdAt,
-                              ).toLocaleDateString()}
+                              {formatDate(tutor.profile.createdAt)}
                             </p>
                           </div>
                         </div>
@@ -684,71 +1231,129 @@ export default function AdminDashboard() {
                   System notifications and alerts requiring your attention.
                 </CardDescription>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => refetchNotifications()}
-                disabled={notificationsLoading}
-              >
-                <RefreshCw
-                  className={`h-4 w-4 ${notificationsLoading ? "animate-spin" : ""}`}
-                />
-              </Button>
+              <div className="flex gap-2">
+                {unreadCount > 0 && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => markAllAsReadMutation.mutate()}
+                    disabled={markAllAsReadMutation.isPending}
+                  >
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Mark All as Read
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetchNotifications()}
+                  disabled={notificationsLoading}
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${notificationsLoading ? "animate-spin" : ""}`}
+                  />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {notificationsLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#9B1B30]" />
                 </div>
-              ) : notifications.length === 0 ? (
+              ) : filteredNotifications.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Bell className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
                   <p>No notifications yet</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {notifications.map((notification) => (
-                    <div
-                      key={notification.id}
-                      className={`p-4 rounded-lg border ${
-                        notification.isRead
-                          ? "bg-background border-border"
-                          : "bg-blue-50 border-blue-200"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <AlertCircle className="h-4 w-4 text-[#9B1B30]" />
-                            <h4 className="font-medium">{notification.title}</h4>
+                  {filteredNotifications.map((notification) => {
+                    const isPhoneViolation = notification.type === "PHONE_NUMBER_VIOLATION";
+                    const notificationData = notification.data as any;
+
+                    return (
+                      <div
+                        key={notification.id}
+                        className={`p-4 rounded-lg border ${
+                          notification.isRead
+                            ? "bg-background border-border"
+                            : "bg-blue-50 border-blue-200"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <AlertCircle className="h-4 w-4 text-[#9B1B30]" />
+                              <h4 className="font-medium">{notification.title}</h4>
+                              {!notification.isRead && (
+                                <Badge variant="destructive" className="text-xs">
+                                  New
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-2">
+                              {notification.body}
+                            </p>
+                            {isPhoneViolation && notificationData?.messageContent && (
+                              <div className="mt-2 p-2 bg-muted/50 rounded border border-border">
+                                <p className="text-xs font-medium text-muted-foreground mb-1">
+                                  Blocked Message:
+                                </p>
+                                <p className="text-sm italic">"{notificationData.messageContent}"</p>
+                              </div>
+                            )}
+                            <p className="text-xs text-muted-foreground mt-2">
+                              {formatDateTime(notification.createdAt)}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            {isPhoneViolation && notificationData?.senderId && notificationData?.senderRole && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const userType = notificationData.senderRole === "student" ? "student" : "tutor";
+                                  const userName = notificationData.senderName || "User";
+
+                                  if (userType === "student") {
+                                    setStudentChatHistory({
+                                      id: notificationData.senderId,
+                                      name: userName,
+                                    });
+                                  } else {
+                                    setTutorChatHistory({
+                                      id: notificationData.senderId,
+                                      name: userName,
+                                    });
+                                  }
+
+                                  // Mark as read when clicked
+                                  if (!notification.isRead) {
+                                    markAsReadMutation.mutate(notification.id);
+                                  }
+                                }}
+                              >
+                                <MessageSquare className="h-4 w-4 mr-1" />
+                                View Chat History
+                              </Button>
+                            )}
                             {!notification.isRead && (
-                              <Badge variant="destructive" className="text-xs">
-                                New
-                              </Badge>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  markAsReadMutation.mutate(notification.id)
+                                }
+                                disabled={markAsReadMutation.isPending}
+                              >
+                                <CheckCircle className="h-4 w-4" />
+                              </Button>
                             )}
                           </div>
-                          <p className="text-sm text-muted-foreground mb-2">
-                            {notification.body}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(notification.createdAt).toLocaleString()}
-                          </p>
                         </div>
-                        {!notification.isRead && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              markAsReadMutation.mutate(notification.id)
-                            }
-                            disabled={markAsReadMutation.isPending}
-                          >
-                            <CheckCircle className="h-4 w-4" />
-                          </Button>
-                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -772,23 +1377,23 @@ export default function AdminDashboard() {
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#9B1B30]" />
                 </div>
-              ) : students.length === 0 ? (
+              ) : filteredStudents.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <BookOpen className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
                   <p>No students registered yet</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {students.map((student) => (
+                  {filteredStudents.map((student) => (
                     <div
                       key={student.id}
-                      className="p-4 border rounded-lg flex items-center justify-between"
+                      className="p-4 border rounded-lg flex items-center justify-between hover:bg-muted/50 transition-colors"
                     >
-                      <div className="flex items-center space-x-3">
+                      <div className="flex items-center space-x-3 flex-1">
                         <div className="h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center">
                           <User className="h-5 w-5" />
                         </div>
-                        <div>
+                        <div className="flex-1">
                           <h3 className="font-semibold">
                             {student.firstName} {student.lastName}
                           </h3>
@@ -796,21 +1401,29 @@ export default function AdminDashboard() {
                             {student.email}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Joined{" "}
-                            {new Date(student.createdAt).toLocaleDateString()}
+                            Joined {formatDate(student.createdAt)}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex gap-2">
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() =>
-                            openChatHistory("student", student.id, formatUserName(student))
-                          }
+                          onClick={() => setSelectedStudent(student)}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          View Details
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setStudentChatHistory({
+                            id: student.id,
+                            name: `${student.firstName} ${student.lastName}`,
+                          })}
                         >
                           <MessageSquare className="h-4 w-4 mr-1" />
-                          View Chats
+                          Chat History
                         </Button>
                         <Button
                           variant="destructive"
@@ -851,14 +1464,14 @@ export default function AdminDashboard() {
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#9B1B30]" />
                 </div>
-              ) : allTutors.length === 0 ? (
+              ) : filteredAllTutors.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <GraduationCap className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
                   <p>No tutors registered yet</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {allTutors.map((tutor) => (
+                  {filteredAllTutors.map((tutor) => (
                     <div
                       key={tutor.profile.id}
                       className="p-4 border rounded-lg"
@@ -876,10 +1489,7 @@ export default function AdminDashboard() {
                               {tutor.user?.email}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              Joined{" "}
-                              {new Date(
-                                tutor.profile.createdAt,
-                              ).toLocaleDateString()}
+                              Joined {formatDate(tutor.profile.createdAt)}
                             </p>
                           </div>
                         </div>
@@ -902,10 +1512,9 @@ export default function AdminDashboard() {
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4 text-sm">
                         <div>
                           <p className="font-medium">Hourly Rate</p>
-                         <p className="text-muted-foreground">
-  {formatMoney(tutor.profile.hourlyRate)}/hour
-</p>
-
+                          <p className="text-muted-foreground">
+                            {getTutorPricing(tutor)}
+                          </p>
                         </div>
                         <div>
                           <p className="font-medium">Phone</p>
@@ -940,7 +1549,26 @@ export default function AdminDashboard() {
                           onClick={() => setSelectedTutor(tutor)}
                         >
                           <Eye className="h-4 w-4 mr-1" />
-                          View Details
+                          Profile
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setSelectedTutorForSessions(tutor)}
+                        >
+                          <Calendar className="h-4 w-4 mr-1" />
+                          Sessions
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setTutorChatHistory({
+                            id: tutor.user?.id || "",
+                            name: `${tutor.user?.firstName} ${tutor.user?.lastName}`,
+                          })}
+                        >
+                          <MessageSquare className="h-4 w-4 mr-1" />
+                          Chat History
                         </Button>
                         {!tutor.profile.isVerified && (
                           <Button
@@ -995,14 +1623,14 @@ export default function AdminDashboard() {
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#9B1B30]" />
                 </div>
-              ) : adminUsers.length === 0 ? (
+              ) : filteredAdminUsers.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Shield className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
                   <p>No admin accounts found</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {adminUsers.map((admin) => (
+                  {filteredAdminUsers.map((admin) => (
                     <div
                       key={admin.id}
                       className="p-4 border rounded-lg flex items-center justify-between"
@@ -1019,8 +1647,7 @@ export default function AdminDashboard() {
                             {admin.email}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Joined{" "}
-                            {new Date(admin.createdAt).toLocaleDateString()}
+                            Joined {formatDate(admin.createdAt)}
                           </p>
                         </div>
                       </div>
@@ -1228,18 +1855,15 @@ export default function AdminDashboard() {
                       Hourly Rate
                     </p>
                     <p className="text-base font-bold text-[#9B1B30]">
-  {formatMoney(selectedTutor.profile.hourlyRate)}/hour
-</p>
-
+                      {getTutorPricing(selectedTutor)}
+                    </p>
                   </div>
                   <div>
                     <p className="font-medium text-sm text-muted-foreground">
                       Application Date
                     </p>
                     <p className="text-base">
-                      {new Date(
-                        selectedTutor.profile.createdAt,
-                      ).toLocaleDateString()}
+                      {formatDate(selectedTutor.profile.createdAt)}
                     </p>
                   </div>
                   <div>
@@ -1389,6 +2013,236 @@ export default function AdminDashboard() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Student Details Dialog */}
+      <Dialog open={!!selectedStudent} onOpenChange={() => setSelectedStudent(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Student Details & Sessions</DialogTitle>
+            <DialogDescription>
+              Complete information and session history for {selectedStudent?.firstName} {selectedStudent?.lastName}
+            </DialogDescription>
+          </DialogHeader>
+          {studentDetailsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#9B1B30]" />
+            </div>
+          ) : studentDetails ? (
+            <div className="space-y-6">
+              {/* Student Info */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Full Name</p>
+                  <p className="text-base font-semibold">
+                    {studentDetails.student.firstName} {studentDetails.student.lastName}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Email</p>
+                  <p className="text-base">{studentDetails.student.email}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Joined</p>
+                  <p className="text-base">
+                    {formatDate(studentDetails.student.createdAt)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">Student ID</p>
+                  <p className="text-base font-mono text-xs">{studentDetails.student.id}</p>
+                </div>
+              </div>
+
+              {/* Stats Cards */}
+              <div className="grid grid-cols-4 gap-3">
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-blue-600">{studentDetails.stats.totalSessions}</p>
+                    <p className="text-xs text-muted-foreground">Total Sessions</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-green-600">{studentDetails.stats.completedSessions}</p>
+                    <p className="text-xs text-muted-foreground">Completed</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-orange-600">{studentDetails.stats.upcomingSessions}</p>
+                    <p className="text-xs text-muted-foreground">Upcoming</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-red-600">{studentDetails.stats.cancelledSessions}</p>
+                    <p className="text-xs text-muted-foreground">Cancelled</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Sessions List */}
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Session History</h3>
+                {studentDetails.sessions.length === 0 ? (
+                  <p className="text-center py-8 text-muted-foreground">No sessions found</p>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {studentDetails.sessions.map((session: any) => (
+                      <div key={session.id} className="p-3 border rounded-lg">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-medium">{session.subject?.name || "Unknown Subject"}</p>
+                              <Badge variant={
+                                session.status === 'completed' ? 'default' :
+                                session.status === 'scheduled' ? 'secondary' :
+                                session.status === 'cancelled' ? 'destructive' : 'outline'
+                              }>
+                                {session.status}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Tutor: {session.tutor?.user?.firstName} {session.tutor?.user?.lastName}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {session.scheduledAt && formatDateTime(
+                                session.scheduledAt?.toDate ? session.scheduledAt.toDate() : session.scheduledAt
+                              )}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold">
+                              {formatMoney(session.priceCents ? session.priceCents / 100 : (session.price || 0))}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{session.duration || 60} min</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-center py-8 text-muted-foreground">Failed to load student details</p>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Tutor Sessions Dialog */}
+      <Dialog open={!!selectedTutorForSessions} onOpenChange={() => setSelectedTutorForSessions(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Tutor Sessions</DialogTitle>
+            <DialogDescription>
+              Session history for {selectedTutorForSessions?.user?.firstName} {selectedTutorForSessions?.user?.lastName}
+            </DialogDescription>
+          </DialogHeader>
+          {tutorSessionsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#9B1B30]" />
+            </div>
+          ) : tutorSessions ? (
+            <div className="space-y-6">
+              {/* Stats Cards */}
+              <div className="grid grid-cols-4 gap-3">
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-blue-600">{tutorSessions.stats.totalSessions}</p>
+                    <p className="text-xs text-muted-foreground">Total Sessions</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-green-600">{tutorSessions.stats.completedSessions}</p>
+                    <p className="text-xs text-muted-foreground">Completed</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-orange-600">{tutorSessions.stats.upcomingSessions}</p>
+                    <p className="text-xs text-muted-foreground">Upcoming</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-bold text-red-600">{tutorSessions.stats.cancelledSessions}</p>
+                    <p className="text-xs text-muted-foreground">Cancelled</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Sessions List */}
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Session History</h3>
+                {tutorSessions.sessions.length === 0 ? (
+                  <p className="text-center py-8 text-muted-foreground">No sessions found</p>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {tutorSessions.sessions.map((session: any) => (
+                      <div key={session.id} className="p-3 border rounded-lg">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-medium">{session.subject?.name || "Unknown Subject"}</p>
+                              <Badge variant={
+                                session.status === 'completed' ? 'default' :
+                                session.status === 'scheduled' ? 'secondary' :
+                                session.status === 'cancelled' ? 'destructive' : 'outline'
+                              }>
+                                {session.status}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Student: {session.student?.firstName} {session.student?.lastName}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {session.scheduledAt && formatDateTime(
+                                session.scheduledAt?.toDate ? session.scheduledAt.toDate() : session.scheduledAt
+                              )}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold">
+                              {formatMoney(session.priceCents ? session.priceCents / 100 : (session.price || 0))}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{session.duration || 60} min</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-center py-8 text-muted-foreground">Failed to load tutor sessions</p>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Student Chat History Dialog */}
+      {studentChatHistory && (
+        <ChatHistoryDialog
+          userId={studentChatHistory.id}
+          userType="student"
+          userName={studentChatHistory.name}
+          open={!!studentChatHistory}
+          onOpenChange={(open) => !open && setStudentChatHistory(null)}
+        />
+      )}
+
+      {/* Tutor Chat History Dialog */}
+      {tutorChatHistory && (
+        <ChatHistoryDialog
+          userId={tutorChatHistory.id}
+          userType="tutor"
+          userName={tutorChatHistory.name}
+          open={!!tutorChatHistory}
+          onOpenChange={(open) => !open && setTutorChatHistory(null)}
+        />
+      )}
     </div>
   );
 }

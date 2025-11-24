@@ -10,6 +10,7 @@ import { requireUser, requireAdmin, type AuthUser, fdb } from "./firebase-admin"
 import { z } from "zod";
 import { sendToAdmins, createTutorRegistrationEmail, getEmailServiceStatus } from "./email";
 import { TutorRankingService } from "./services/tutorRanking";
+import studyBuddyRoutes from "./routes/studyBuddyRoutes";
 
 const chooseRoleSchema = z.object({
   role: z.enum(["student", "tutor", "admin"]),
@@ -74,6 +75,24 @@ const createReviewSchema = z.object({
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// ============================================================
+// IN-MEMORY CACHING FOR HEAVY READ ENDPOINTS
+// ============================================================
+// Cache for /api/subjects
+let cachedSubjects: any[] | null = null;
+let cachedSubjectsFetchedAt = 0;
+const SUBJECTS_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// Cache for /api/stats
+let cachedStats: { tutors: number; students: number; sessions: number } | null = null;
+let cachedStatsFetchedAt = 0;
+const STATS_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+// Cache for /api/tutors
+let cachedTutors: any[] | null = null;
+let cachedTutorsFetchedAt = 0;
+const TUTORS_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 function now() {
   return new Date();
@@ -370,6 +389,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/stats", async (_req, res) => {
     try {
+      // Check cache first
+      const now = Date.now();
+      if (cachedStats && (now - cachedStatsFetchedAt) < STATS_TTL_MS) {
+        console.log("[/api/stats] Serving from cache");
+        return res.json(cachedStats);
+      }
+
+      // Cache miss - fetch from Firestore
+      console.log("[/api/stats] Fetching from Firestore");
       const tutorsAgg = await fdb!
         .collection("tutor_profiles")
         .where("isVerified", "==", true)
@@ -385,11 +413,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .count()
         .get();
 
-      res.json({
+      const stats = {
         tutors: tutorsAgg.data().count || 0,
         students: studentsAgg.data().count || 0,
         sessions: completedAgg.data().count || 0,
-      });
+      };
+
+      // Update cache
+      cachedStats = stats;
+      cachedStatsFetchedAt = now;
+
+      res.json(stats);
     } catch (error) {
       console.error("Error fetching platform stats:", error);
       res.status(500).json({ message: "Failed to fetch platform statistics", fieldErrors: {} });
@@ -468,8 +502,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updateData = updateSchema.parse(req.body);
       if (updateData.profileImageUrl === "") delete (updateData as any).profileImageUrl;
 
+      // Check if name is being changed
+      const nameChanged =
+        (updateData.firstName && updateData.firstName !== user.firstName) ||
+        (updateData.lastName && updateData.lastName !== user.lastName);
+
       const ref = fdb!.collection("users").doc(user.id);
-      await ref.set({ ...updateData, updatedAt: now() }, { merge: true });
+      const dataToUpdate: any = { ...updateData, updatedAt: now() };
+
+      // If name changed, update lastNameChangeAt timestamp
+      if (nameChanged) {
+        dataToUpdate.lastNameChangeAt = now();
+      }
+
+      await ref.set(dataToUpdate, { merge: true });
 
       const snap = await ref.get();
       const updatedUser = { id: snap.id, ...snap.data() } as any;
@@ -599,8 +645,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/subjects", async (_req, res) => {
     try {
       if (!fdb) return res.status(500).json({ message: "Firestore not initialized" });
+
+      // Check cache first
+      const now = Date.now();
+      if (cachedSubjects && (now - cachedSubjectsFetchedAt) < SUBJECTS_TTL_MS) {
+        console.log("[/api/subjects] Serving from cache");
+        res.set("Cache-Control", "public, max-age=60");
+        return res.json(cachedSubjects);
+      }
+
+      // Cache miss - fetch from Firestore
+      console.log("[/api/subjects] Fetching from Firestore");
       const snap = await fdb.collection("subjects").orderBy("name").get();
       const all = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+
+      // Update cache
+      cachedSubjects = all;
+      cachedSubjectsFetchedAt = now;
+
       res.set("Cache-Control", "public, max-age=60");
       res.json(all);
     } catch (err) {
@@ -639,6 +701,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
       }
       await batch.commit();
+
+      // Invalidate subjects cache
+      cachedSubjects = null;
+      console.log("[Cache] Subjects cache invalidated");
+
       res.json({ message: "Basic subjects seeded successfully" });
     } catch (err) {
       console.error("Error seeding subjects:", err);
@@ -745,6 +812,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         subjects = sids.map((sid) => (map.get(sid) ? { id: sid, ...map.get(sid)! } : null)).filter(Boolean) as any[];
       }
 
+      // Invalidate tutors cache since profile was created/updated
+      cachedTutors = null;
+      console.log("[Cache] Tutors cache invalidated");
+
       res.json({ profile: finalProfile, user: joinedUser, subjects });
     } catch (error) {
       console.error("Error creating tutor profile:", error instanceof Error ? error.message : String(error));
@@ -818,6 +889,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const map = await batchLoadMap<any>("subjects", sids);
         subjects = sids.map((sid) => (map.get(sid) ? { id: sid, ...map.get(sid)! } : null)).filter(Boolean) as any[];
       }
+
+      // Invalidate tutors cache since profile was updated
+      cachedTutors = null;
+      console.log("[Cache] Tutors cache invalidated");
 
       res.json({ profile: { id: ref.id, ...updatedProfile.data() }, user: joinedUser, subjects });
     } catch (error) {
@@ -1032,54 +1107,136 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/messages", requireUser, requireAdmin, async (req, res) => {
+  // Admin analytics endpoint
+  app.get("/api/admin/analytics", requireUser, requireAdmin, async (req, res) => {
     try {
-      const { studentId, tutorId } = adminMessagesQuerySchema.parse(req.query);
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-      if (!studentId && !tutorId) {
-        return res.status(400).json({ message: "studentId or tutorId is required", fieldErrors: {} });
+      // Get date range from query parameters
+      const fromDateParam = req.query.fromDate as string | undefined;
+      const toDateParam = req.query.toDate as string | undefined;
+      const fromDate = fromDateParam ? new Date(fromDateParam) : undefined;
+      const toDate = toDateParam ? new Date(toDateParam) : undefined;
+
+      // Helper to check if a date is in range
+      const isInDateRange = (dateValue: any): boolean => {
+        if (!fromDate && !toDate) return true;
+        const date = dateValue?.toDate ? dateValue.toDate() : new Date(dateValue);
+        if (fromDate && date < fromDate) return false;
+        if (toDate && date > toDate) return false;
+        return true;
+      };
+
+      // Get all users with timestamps
+      const usersSnap = await fdb!.collection("users").get();
+      let users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+
+      // Filter users by date range
+      if (fromDate || toDate) {
+        users = users.filter(u => isInDateRange(u.createdAt));
       }
 
-      const whereClauses: Array<[string, FirebaseFirestore.WhereFilterOp, any]> = [];
-      if (studentId) whereClauses.push(["studentId", "==", studentId]);
-      if (tutorId) whereClauses.push(["tutorId", "==", tutorId]);
+      // Get all sessions
+      const sessionsSnap = await fdb!.collection("tutoring_sessions").get();
+      let sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
 
-      const rawMessages = await listCollection<any>("messages", whereClauses);
-      rawMessages.sort((a, b) => coerceMillis(a.createdAt) - coerceMillis(b.createdAt));
-
-      const userIds = new Set<string>();
-      for (const msg of rawMessages) {
-        if (msg.senderId) userIds.add(msg.senderId);
-        if (msg.receiverId) userIds.add(msg.receiverId);
-        if (msg.studentId) userIds.add(msg.studentId);
-        if (msg.tutorId) userIds.add(msg.tutorId);
+      // Filter sessions by date range (using createdAt or scheduledAt)
+      if (fromDate || toDate) {
+        sessions = sessions.filter(s => isInDateRange(s.createdAt || s.scheduledAt));
       }
 
-      const users = await batchLoadMap<any>("users", Array.from(userIds));
+      // Get all tutor profiles for subjects
+      const tutorProfiles = await listCollection<any>("tutor_profiles");
 
-      const messages = rawMessages.map((m) => ({
-        id: m.id,
-        senderId: m.senderId,
-        receiverId: m.receiverId,
-        studentId: m.studentId,
-        tutorId: m.tutorId,
-        conversationKey: `${m.studentId || "unknown"}_${m.tutorId || "unknown"}`,
-        content: m.content,
-        read: !!m.read,
-        createdAt: new Date(coerceMillis(m.createdAt)).toISOString(),
-        sender: users.get(m.senderId) || null,
-        receiver: users.get(m.receiverId) || null,
-        student: users.get(m.studentId) || null,
-        tutor: users.get(m.tutorId) || null,
-      }));
+      // Calculate user growth (last 30 days)
+      const userGrowth: { date: string; students: number; tutors: number }[] = [];
+      for (let i = 29; i >= 0; i--) {
+        const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+        const dateStr = date.toISOString().split('T')[0];
 
-      res.json({ messages });
+        const studentsCount = users.filter(u => {
+          if (u.role !== 'student') return false;
+          const createdAt = u.createdAt?.toDate ? u.createdAt.toDate() : new Date(u.createdAt);
+          return createdAt <= date;
+        }).length;
+
+        const tutorsCount = users.filter(u => {
+          if (u.role !== 'tutor') return false;
+          const createdAt = u.createdAt?.toDate ? u.createdAt.toDate() : new Date(u.createdAt);
+          return createdAt <= date;
+        }).length;
+
+        userGrowth.push({ date: dateStr, students: studentsCount, tutors: tutorsCount });
+      }
+
+      // Session statistics
+      const sessionStats = {
+        completed: sessions.filter(s => s.status === 'completed').length,
+        scheduled: sessions.filter(s => s.status === 'scheduled').length,
+        pending: sessions.filter(s => s.status === 'pending').length,
+        cancelled: sessions.filter(s => s.status === 'cancelled').length,
+        inProgress: sessions.filter(s => s.status === 'in-progress').length,
+      };
+
+      // Get all subjects and count sessions per subject
+      const subjectsSnap = await fdb!.collection("subjects").get();
+      const subjects = subjectsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+
+      const subjectStats = subjects.map(subject => {
+        const count = sessions.filter(s => s.subjectId === subject.id).length;
+        return {
+          name: subject.name,
+          sessions: count,
+        };
+      }).filter(s => s.sessions > 0).sort((a, b) => b.sessions - a.sessions).slice(0, 8);
+
+      // Calculate revenue (from completed sessions)
+      const totalRevenue = sessions
+        .filter(s => s.status === 'completed')
+        .reduce((sum, s) => {
+          const price = s.priceCents ? s.priceCents / 100 : (s.price || 0);
+          return sum + price;
+        }, 0);
+
+      // Session completion rate
+      const totalSessionsBooked = sessions.length;
+      const completedSessions = sessionStats.completed;
+      const completionRate = totalSessionsBooked > 0
+        ? Math.round((completedSessions / totalSessionsBooked) * 100)
+        : 0;
+
+      // Recent activity (last 10 sessions)
+      const recentSessions = sessions
+        .sort((a, b) => {
+          const aDate = a.scheduledAt?.toDate ? a.scheduledAt.toDate() : new Date(a.scheduledAt);
+          const bDate = b.scheduledAt?.toDate ? b.scheduledAt.toDate() : new Date(b.scheduledAt);
+          return bDate.getTime() - aDate.getTime();
+        })
+        .slice(0, 10);
+
+      res.json({
+        userGrowth,
+        sessionStats,
+        subjectStats,
+        overview: {
+          totalStudents: users.filter(u => u.role === 'student').length,
+          totalTutors: users.filter(u => u.role === 'tutor').length,
+          verifiedTutors: tutorProfiles.filter(t => t.isVerified).length,
+          totalSessions: totalSessionsBooked,
+          completedSessions,
+          completionRate,
+          totalRevenue: Math.round(totalRevenue * 100) / 100,
+        },
+        recentActivity: recentSessions.map(s => ({
+          id: s.id,
+          status: s.status,
+          scheduledAt: s.scheduledAt?.toDate ? s.scheduledAt.toDate().toISOString() : s.scheduledAt,
+        })),
+      });
     } catch (error) {
-      console.error("Error fetching admin chat history:", error);
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Invalid query", fieldErrors: error.flatten().fieldErrors });
-      }
-      res.status(500).json({ message: "Failed to fetch messages", fieldErrors: {} });
+      console.error("Error fetching admin analytics:", error);
+      res.status(500).json({ message: "Failed to fetch analytics", fieldErrors: {} });
     }
   });
 
@@ -1090,6 +1247,285 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching students:", error);
       res.status(500).json({ message: "Failed to fetch students", fieldErrors: {} });
+    }
+  });
+
+  // Get student details with sessions
+  app.get("/api/admin/students/:userId/details", requireUser, requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      // Get student user data
+      const studentDoc = await fdb!.collection("users").doc(userId).get();
+      if (!studentDoc.exists) {
+        return res.status(404).json({ message: "Student not found", fieldErrors: {} });
+      }
+
+      const student = { id: studentDoc.id, ...studentDoc.data() };
+
+      // Get student's sessions
+      const sessionsSnap = await fdb!.collection("tutoring_sessions")
+        .where("studentId", "==", userId)
+        .orderBy("scheduledAt", "desc")
+        .limit(50)
+        .get();
+
+      const sessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Get unique tutor and subject IDs
+      const tutorIds = new Set<string>();
+      const subjectIds = new Set<string>();
+      sessions.forEach((s: any) => {
+        if (s.tutorId) tutorIds.add(s.tutorId);
+        if (s.subjectId) subjectIds.add(s.subjectId);
+      });
+
+      // Batch load tutors and subjects
+      const tutorsMap = await batchLoadMap<any>("tutor_profiles", Array.from(tutorIds));
+      const subjectsMap = await batchLoadMap<any>("subjects", Array.from(subjectIds));
+
+      // Get tutor user data
+      const tutorUserIds = Array.from(tutorsMap.values()).map((t: any) => t.userId).filter(Boolean);
+      const tutorUsersMap = await batchLoadMap<any>("users", tutorUserIds);
+
+      // Enrich sessions with tutor and subject data
+      const enrichedSessions = sessions.map((s: any) => {
+        const tutorProfile = s.tutorId ? tutorsMap.get(s.tutorId) : null;
+        const tutorUser = tutorProfile?.userId ? tutorUsersMap.get(tutorProfile.userId) : null;
+
+        return {
+          ...s,
+          tutor: tutorProfile ? {
+            ...tutorProfile,
+            user: tutorUser,
+          } : null,
+          subject: s.subjectId ? subjectsMap.get(s.subjectId) : null,
+        };
+      });
+
+      res.json({
+        student,
+        sessions: enrichedSessions,
+        stats: {
+          totalSessions: sessions.length,
+          completedSessions: sessions.filter((s: any) => s.status === 'completed').length,
+          upcomingSessions: sessions.filter((s: any) => s.status === 'scheduled').length,
+          cancelledSessions: sessions.filter((s: any) => s.status === 'cancelled').length,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching student details:", error);
+      res.status(500).json({ message: "Failed to fetch student details", fieldErrors: {} });
+    }
+  });
+
+  // Get tutor sessions
+  app.get("/api/admin/tutors/:userId/sessions", requireUser, requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+
+      // Get tutor profile
+      const tutorProfileSnap = await fdb!.collection("tutor_profiles")
+        .where("userId", "==", userId)
+        .limit(1)
+        .get();
+
+      if (tutorProfileSnap.empty) {
+        return res.status(404).json({ message: "Tutor profile not found", fieldErrors: {} });
+      }
+
+      const tutorProfile = tutorProfileSnap.docs[0];
+
+      // Get tutor's sessions
+      const sessionsSnap = await fdb!.collection("tutoring_sessions")
+        .where("tutorId", "==", tutorProfile.id)
+        .get();
+
+      // Sort in memory to avoid needing a composite index
+      const sortedDocs = sessionsSnap.docs.sort((a, b) => {
+        const aTime = coerceMillis(a.get("scheduledAt"));
+        const bTime = coerceMillis(b.get("scheduledAt"));
+        return bTime - aTime; // descending
+      }).slice(0, 50); // limit to 50
+
+      const sessions = sortedDocs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Get unique student and subject IDs
+      const studentIds = new Set<string>();
+      const subjectIds = new Set<string>();
+      sessions.forEach((s: any) => {
+        if (s.studentId) studentIds.add(s.studentId);
+        if (s.subjectId) subjectIds.add(s.subjectId);
+      });
+
+      // Batch load students and subjects
+      const studentsMap = await batchLoadMap<any>("users", Array.from(studentIds));
+      const subjectsMap = await batchLoadMap<any>("subjects", Array.from(subjectIds));
+
+      // Enrich sessions
+      const enrichedSessions = sessions.map((s: any) => ({
+        ...s,
+        student: s.studentId ? studentsMap.get(s.studentId) : null,
+        subject: s.subjectId ? subjectsMap.get(s.subjectId) : null,
+      }));
+
+      res.json({
+        sessions: enrichedSessions,
+        stats: {
+          totalSessions: sessions.length,
+          completedSessions: sessions.filter((s: any) => s.status === 'completed').length,
+          upcomingSessions: sessions.filter((s: any) => s.status === 'scheduled').length,
+          cancelledSessions: sessions.filter((s: any) => s.status === 'cancelled').length,
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching tutor sessions:", error);
+      res.status(500).json({ message: "Failed to fetch tutor sessions", fieldErrors: {} });
+    }
+  });
+
+  // Mark all notifications as read
+  app.post("/api/admin/notifications/mark-all-read", requireUser, requireAdmin, async (req, res) => {
+    try {
+      // Get all unread admin notifications
+      const unreadSnap = await fdb!.collection("notifications")
+        .where("audience", "==", "admin")
+        .where("isRead", "==", false)
+        .get();
+
+      // Batch update all to read
+      const batch = fdb!.batch();
+      unreadSnap.docs.forEach(doc => {
+        batch.update(doc.ref, { isRead: true, readAt: now() });
+      });
+
+      await batch.commit();
+
+      res.json({
+        message: "All notifications marked as read",
+        count: unreadSnap.size,
+      });
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+      res.status(500).json({ message: "Failed to mark notifications as read", fieldErrors: {} });
+    }
+  });
+
+  // GET /api/admin/students/:userId/messages -> all messages for a student with all tutors
+  app.get("/api/admin/students/:userId/messages", requireUser, requireAdmin, async (req, res) => {
+    try {
+      const studentId = req.params.userId;
+
+      // Verify the user is a student
+      const student = await getDoc<any>("users", studentId);
+      if (!student) {
+        return res.status(404).json({ message: "Student not found", fieldErrors: {} });
+      }
+      if (student.role !== "student") {
+        return res.status(400).json({ message: "User is not a student", fieldErrors: {} });
+      }
+
+      // Fetch all messages where student is sender or receiver
+      const col = fdb!.collection("messages");
+      const [sentSnap, receivedSnap] = await Promise.all([
+        col.where("senderId", "==", studentId).get(),
+        col.where("receiverId", "==", studentId).get(),
+      ]);
+
+      const allMessages = [...sentSnap.docs, ...receivedSnap.docs].map((d) => ({
+        id: d.id,
+        ...(d.data() as any),
+      }));
+
+      // Sort by timestamp
+      allMessages.sort((a, b) => coerceMillis(a.createdAt) - coerceMillis(b.createdAt));
+
+      // Get all unique user IDs involved in conversations
+      const userIds = new Set<string>();
+      allMessages.forEach((m) => {
+        userIds.add(m.senderId);
+        userIds.add(m.receiverId);
+      });
+
+      // Load all users
+      const usersMap = await batchLoadMap<any>("users", Array.from(userIds));
+
+      // Enrich messages with user data
+      const enrichedMessages = allMessages.map((m) => ({
+        id: m.id,
+        senderId: m.senderId,
+        receiverId: m.receiverId,
+        content: m.content,
+        fileUrl: m.fileUrl || null,
+        read: !!m.read,
+        createdAt: new Date(coerceMillis(m.createdAt)).toISOString(),
+        sender: usersMap.get(m.senderId) || null,
+        receiver: usersMap.get(m.receiverId) || null,
+      }));
+
+      res.json(enrichedMessages);
+    } catch (error) {
+      console.error("Error fetching student messages:", error);
+      res.status(500).json({ message: "Failed to fetch student messages", fieldErrors: {} });
+    }
+  });
+
+  // GET /api/admin/tutors/:userId/messages -> all messages for a tutor with all students
+  app.get("/api/admin/tutors/:userId/messages", requireUser, requireAdmin, async (req, res) => {
+    try {
+      const tutorId = req.params.userId;
+
+      // Verify the user is a tutor
+      const tutor = await getDoc<any>("users", tutorId);
+      if (!tutor) {
+        return res.status(404).json({ message: "Tutor not found", fieldErrors: {} });
+      }
+      if (tutor.role !== "tutor") {
+        return res.status(400).json({ message: "User is not a tutor", fieldErrors: {} });
+      }
+
+      // Fetch all messages where tutor is sender or receiver
+      const col = fdb!.collection("messages");
+      const [sentSnap, receivedSnap] = await Promise.all([
+        col.where("senderId", "==", tutorId).get(),
+        col.where("receiverId", "==", tutorId).get(),
+      ]);
+
+      const allMessages = [...sentSnap.docs, ...receivedSnap.docs].map((d) => ({
+        id: d.id,
+        ...(d.data() as any),
+      }));
+
+      // Sort by timestamp
+      allMessages.sort((a, b) => coerceMillis(a.createdAt) - coerceMillis(b.createdAt));
+
+      // Get all unique user IDs involved in conversations
+      const userIds = new Set<string>();
+      allMessages.forEach((m) => {
+        userIds.add(m.senderId);
+        userIds.add(m.receiverId);
+      });
+
+      // Load all users
+      const usersMap = await batchLoadMap<any>("users", Array.from(userIds));
+
+      // Enrich messages with user data
+      const enrichedMessages = allMessages.map((m) => ({
+        id: m.id,
+        senderId: m.senderId,
+        receiverId: m.receiverId,
+        content: m.content,
+        fileUrl: m.fileUrl || null,
+        read: !!m.read,
+        createdAt: new Date(coerceMillis(m.createdAt)).toISOString(),
+        sender: usersMap.get(m.senderId) || null,
+        receiver: usersMap.get(m.receiverId) || null,
+      }));
+
+      res.json(enrichedMessages);
+    } catch (error) {
+      console.error("Error fetching tutor messages:", error);
+      res.status(500).json({ message: "Failed to fetch tutor messages", fieldErrors: {} });
     }
   });
 
@@ -1109,9 +1545,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/pending-tutors", requireUser, requireAdmin, async (_req, res) => {
     try {
       const profs = await listCollection<any>("tutor_profiles", [["isVerified", "==", false]]);
+
+      if (profs.length === 0) {
+        return res.json([]);
+      }
+
       const userIds = profs.map((p) => p.userId).filter(Boolean);
-      const usersMap = await batchLoadMap<any>("users", userIds);
-      const results = profs.map((p) => ({ profile: p, user: usersMap.get(p.userId) || null }));
+      const tutorIds = profs.map((p) => p.id);
+
+      // Load users and tutor_subjects
+      const [usersMap, tsDocs] = await Promise.all([
+        batchLoadMap<any>("users", userIds),
+        (async () => {
+          // fetch tutor_subjects in chunks of 10 for 'in' constraint
+          const chunks: string[][] = [];
+          for (let i = 0; i < tutorIds.length; i += 10) {
+            chunks.push(tutorIds.slice(i, i + 10));
+          }
+          const acc: FirebaseFirestore.QueryDocumentSnapshot[] = [];
+          for (const chunk of chunks) {
+            const snap = await fdb!
+              .collection("tutor_subjects")
+              .where("tutorId", "in", chunk)
+              .get();
+            acc.push(...snap.docs);
+          }
+          return acc;
+        })(),
+      ]);
+
+      // Build tutorId -> subjectIds map
+      const tutorSubjectIds = new Map<string, string[]>();
+      for (const doc of tsDocs) {
+        const tid = doc.get("tutorId");
+        const sid = doc.get("subjectId");
+        if (!tutorSubjectIds.has(tid)) tutorSubjectIds.set(tid, []);
+        tutorSubjectIds.get(tid)!.push(sid);
+      }
+
+      // Batch load all subjects
+      const allSubjectIds = Array.from(new Set(tsDocs.map((d) => d.get("subjectId"))));
+      const subjectsMap = await batchLoadMap<any>("subjects", allSubjectIds);
+
+      // Enrich profiles with user and subjects
+      const results = profs.map((p) => {
+        const subjectIds = tutorSubjectIds.get(p.id) || [];
+        const subjects = subjectIds
+          .map((sid) => (subjectsMap.get(sid) ? { id: sid, ...subjectsMap.get(sid)! } : null))
+          .filter(Boolean);
+
+        return {
+          profile: p,
+          user: usersMap.get(p.userId) || null,
+          subjects,
+        };
+      });
+
       res.json(results);
     } catch (error) {
       console.error("Error fetching pending tutors:", error);
@@ -1154,6 +1643,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const snap = await ref.get();
       if (!snap.exists) return res.status(404).json({ message: "Tutor profile not found", fieldErrors: {} });
       await ref.set({ isVerified: true, isActive: true, updatedAt: now() }, { merge: true });
+
+      // Invalidate tutors and stats cache since verification affects both
+      cachedTutors = null;
+      cachedStats = null;
+      console.log("[Cache] Tutors and Stats cache invalidated");
+
       res.json({ message: "Tutor verified successfully" });
     } catch (error) {
       console.error("Error verifying tutor:", error);
@@ -1280,12 +1775,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 // === TUTORS LISTING (with subjects + reviews) ===
 app.get("/api/tutors", async (_req, res) => {
   try {
+    // Check cache first
+    const now = Date.now();
+    if (cachedTutors && (now - cachedTutorsFetchedAt) < TUTORS_TTL_MS) {
+      console.log("[/api/tutors] Serving from cache");
+      return res.json(cachedTutors);
+    }
+
+    // Cache miss - fetch from Firestore
+    console.log("[/api/tutors] Fetching from Firestore");
     const profs = await listCollection<any>("tutor_profiles", [
       ["isActive", "==", true],
       ["isVerified", "==", true],
     ]);
 
-    if (profs.length === 0) return res.json([]);
+    if (profs.length === 0) {
+      cachedTutors = [];
+      cachedTutorsFetchedAt = now;
+      return res.json([]);
+    }
 
     const userIds = profs.map((p) => p.userId).filter(Boolean);
     const tutorIds = profs.map((p) => p.id);
@@ -1378,6 +1886,10 @@ app.get("/api/tutors", async (_req, res) => {
         totalReviews: reviewCount,
       };
     });
+
+    // Update cache
+    cachedTutors = tutorsWithSubjects;
+    cachedTutorsFetchedAt = now;
 
     res.json(tutorsWithSubjects);
   } catch (error) {
@@ -1916,6 +2428,13 @@ app.get("/api/tutors/:id", async (req, res) => {
       }
 
       await ref.set({ status, updatedAt: now() }, { merge: true });
+
+      // Invalidate stats cache if session was completed
+      if (status === "completed") {
+        cachedStats = null;
+        console.log("[Cache] Stats cache invalidated");
+      }
+
       const updated = await ref.get();
       res.json({ id: updated.id, ...updated.data() });
     } catch (error) {
@@ -1998,7 +2517,7 @@ app.get("/api/tutors/:id", async (req, res) => {
       const subject = subjectSnap.exists ? subjectSnap.data()?.name : undefined;
 
       const studentSnap = await fdb!.collection("users").doc(session.studentId).get();
-      const studentName = studentSnap.exists ? studentSnap.data()?.name : undefined;
+      const studentName = studentSnap.exists ? `${studentSnap.data()?.firstName} ${studentSnap.data()?.lastName}` : undefined;
 
       // Generate the AI summary
       const aiSummary = await generateLessonSummary({
@@ -2020,8 +2539,158 @@ app.get("/api/tutors/:id", async (req, res) => {
         { merge: true }
       );
 
+      // Create or update Study Buddy conversation with the AI summary
+      let studyBuddyConvId: string | null = null;
+      try {
+        // Create a study buddy conversation for this session
+        const conversationRef = fdb!.collection("study_buddy_conversations").doc();
+        studyBuddyConvId = conversationRef.id;
+
+        // Format the AI summary as initial conversation context
+        const summaryMessage = `📚 **Lesson Report for ${subject || "your session"}**
+
+**What You Learned:**
+${aiSummary.whatWasLearned}
+
+**Your Strengths:**
+${aiSummary.strengths}
+
+**Areas for Improvement:**
+${aiSummary.mistakes}
+
+**Practice Tasks:**
+${aiSummary.practiceTasks}
+
+---
+
+I'm here to help you understand the concepts better and practice! Feel free to ask me questions about anything from your lesson.`;
+
+        await conversationRef.set({
+          conversationId: studyBuddyConvId,
+          userId: session.studentId,
+          sessionId: sessionId,
+          title: `${subject || "Session"} Review`,
+          summary: `Review conversation for ${subject || "session"} on ${new Date().toLocaleDateString()}`,
+          createdAt: now(),
+          updatedAt: now(),
+          messageCount: 1,
+        });
+
+        // Add the AI summary as the first message in the conversation
+        await fdb!.collection("study_buddy_messages").add({
+          conversationId: studyBuddyConvId,
+          userId: session.studentId,
+          role: "assistant",
+          content: summaryMessage,
+          timestamp: now(),
+          metadata: {
+            sessionId: sessionId,
+            generatedFromSummary: true,
+          },
+        });
+
+        console.log(`Study Buddy conversation created for session ${sessionId}`);
+      } catch (studyBuddyError) {
+        console.error("Error creating study buddy conversation (non-critical):", studyBuddyError);
+      }
+
+      // Automatically generate quiz after summary is created
+      let quizGenerationError: string | null = null;
+      try {
+        const { generateSessionQuiz } = await import("./ai-quiz");
+
+        console.log(`Starting quiz generation for session ${sessionId}...`);
+
+        // Generate the quiz
+        const quizData = await generateSessionQuiz({
+          aiSummary,
+          subject,
+          studentName,
+        });
+
+        console.log(`Quiz data generated, saving to Firestore...`);
+
+        // Save the quiz to Firestore
+        const quizRef = fdb!.collection("session_quizzes").doc();
+        await quizRef.set({
+          sessionId,
+          ...quizData,
+          createdAt: now(),
+          aiGenerated: true,
+        });
+
+        // Update session with quiz reference
+        await ref.set(
+          {
+            quizId: quizRef.id,
+            studyBuddyConversationId: studyBuddyConvId,
+            updatedAt: now(),
+          },
+          { merge: true }
+        );
+
+        console.log(`✅ Quiz auto-generated successfully for session ${sessionId} (Quiz ID: ${quizRef.id})`);
+      } catch (quizError: any) {
+        // Log error but don't fail the summary generation
+        console.error("❌ Error auto-generating quiz:", quizError);
+        console.error("Quiz error details:", {
+          message: quizError.message,
+          stack: quizError.stack,
+        });
+        quizGenerationError = quizError.message || "Failed to generate quiz";
+
+        // Still save the study buddy conversation ID if it exists
+        if (studyBuddyConvId) {
+          await ref.set(
+            {
+              studyBuddyConversationId: studyBuddyConvId,
+              updatedAt: now(),
+            },
+            { merge: true }
+          );
+        }
+      }
+
+      // Send notification to student about new lesson report
+      try {
+        const notificationBody = quizGenerationError
+          ? `Your tutor has created a lesson report for your ${subject || "session"}. Check out your Study Buddy to review!`
+          : `Your tutor has created a lesson report for your ${subject || "session"}. View the report, take the improvement quiz, and chat with your Study Buddy!`;
+
+        await fdb!.collection("notifications").add({
+          userId: session.studentId,
+          audience: "user",
+          type: "LESSON_REPORT_READY",
+          title: "New Lesson Report Available",
+          body: notificationBody,
+          isRead: false,
+          sessionId,
+          studyBuddyConversationId: studyBuddyConvId,
+          createdAt: now(),
+        });
+        console.log(`Notification sent to student ${session.studentId}`);
+      } catch (notifError) {
+        console.error("Error sending notification (non-critical):", notifError);
+      }
+
       const updated = await ref.get();
-      res.json({ id: updated.id, ...updated.data() });
+      const responseData: any = { id: updated.id, ...updated.data() };
+
+      // Include quiz generation status for better UX
+      if (quizGenerationError) {
+        responseData.warnings = [
+          {
+            type: "quiz_generation_failed",
+            message: `Quiz generation failed: ${quizGenerationError}. The summary and study buddy were created successfully.`,
+          },
+        ];
+      }
+
+      if (studyBuddyConvId) {
+        responseData.studyBuddyConversationId = studyBuddyConvId;
+      }
+
+      res.json(responseData);
    } catch (error: any) {
   console.error("Error generating AI summary:", error);
 
@@ -2063,6 +2732,294 @@ app.get("/api/tutors/:id", async (req, res) => {
   });
 }
 });
+
+  // === SESSION QUIZZES ===
+
+  // Generate quiz from session summary
+  app.post("/api/sessions/:id/generate-quiz", requireUser, async (req, res) => {
+    try {
+      const user = req.user!;
+      const sessionId = req.params.id;
+
+      const sessionRef = fdb!.collection("tutoring_sessions").doc(sessionId);
+      const sessionSnap = await sessionRef.get();
+      if (!sessionSnap.exists) {
+        return res.status(404).json({ message: "Session not found", fieldErrors: {} });
+      }
+      const session = { id: sessionSnap.id, ...(sessionSnap.data() as any) } as any;
+
+      // Only tutors or admins can generate quizzes
+      if (user.role === "tutor") {
+        const profSnap = await fdb!.collection("tutor_profiles").where("userId", "==", user.id).limit(1).get();
+        const tutorProfile = profSnap.empty ? null : ({ id: profSnap.docs[0].id, ...profSnap.docs[0].data() } as any);
+        if (!tutorProfile || session.tutorId !== tutorProfile.id) {
+          return res.status(403).json({ message: "Not authorized to generate quiz for this session", fieldErrors: {} });
+        }
+      } else if (user.role !== "admin") {
+        return res.status(403).json({ message: "Only tutors can generate session quizzes", fieldErrors: {} });
+      }
+
+      // Check if AI summary exists
+      if (!session.aiSummary) {
+        return res.status(400).json({ message: "AI summary is required to generate a quiz. Please generate the summary first.", fieldErrors: {} });
+      }
+
+      // Import the AI quiz generator
+      const { generateSessionQuiz } = await import("./ai-quiz");
+
+      // Fetch additional context
+      const subjectSnap = await fdb!.collection("subjects").doc(session.subjectId).get();
+      const subject = subjectSnap.exists ? subjectSnap.data()?.name : undefined;
+
+      const studentSnap = await fdb!.collection("users").doc(session.studentId).get();
+      const studentName = studentSnap.exists ? `${studentSnap.data()?.firstName} ${studentSnap.data()?.lastName}` : undefined;
+
+      // Generate the quiz
+      const quizData = await generateSessionQuiz({
+        aiSummary: session.aiSummary,
+        subject,
+        studentName,
+      });
+
+      // Save the quiz to Firestore
+      const quizRef = fdb!.collection("session_quizzes").doc();
+      await quizRef.set({
+        sessionId,
+        ...quizData,
+        createdAt: now(),
+        aiGenerated: true,
+      });
+
+      // Update session with quiz reference
+      await sessionRef.set(
+        {
+          quizId: quizRef.id,
+          updatedAt: now(),
+        },
+        { merge: true }
+      );
+
+      const quiz = await quizRef.get();
+      res.json({ id: quiz.id, ...quiz.data() });
+    } catch (error: any) {
+      console.error("Error generating quiz:", error);
+
+      const msg = String(error?.message ?? "");
+      const isOverloaded =
+        msg.includes("model is overloaded") ||
+        msg.includes("503 Service Unavailable");
+
+      if (isOverloaded) {
+        return res
+          .status(503)
+          .json({
+            message: "AI service is temporarily busy. Please try again in a few seconds.",
+            fieldErrors: {},
+          });
+      }
+
+      if (msg.toLowerCase().includes("api key")) {
+        return res
+          .status(500)
+          .json({
+            message: "AI configuration error. Please contact the administrator.",
+            fieldErrors: {},
+          });
+      }
+
+      if (msg.toLowerCase().includes("quota")) {
+        return res
+          .status(429)
+          .json({
+            message: "AI quota exceeded. Please try again later.",
+            fieldErrors: {},
+          });
+      }
+
+      res.status(500).json({
+        message: msg || "Failed to generate quiz. Please try again.",
+        fieldErrors: {},
+      });
+    }
+  });
+
+  // Get quiz for a session
+  app.get("/api/sessions/:id/quiz", requireUser, async (req, res) => {
+    try {
+      const user = req.user!;
+      const sessionId = req.params.id;
+
+      const sessionRef = fdb!.collection("tutoring_sessions").doc(sessionId);
+      const sessionSnap = await sessionRef.get();
+      if (!sessionSnap.exists) {
+        return res.status(404).json({ message: "Session not found", fieldErrors: {} });
+      }
+      const session = { id: sessionSnap.id, ...(sessionSnap.data() as any) } as any;
+
+      // Verify user is the student or tutor of this session
+      let isAuthorized = false;
+      if (user.role === "student" && session.studentId === user.id) {
+        isAuthorized = true;
+      } else if (user.role === "tutor") {
+        const profSnap = await fdb!.collection("tutor_profiles").where("userId", "==", user.id).limit(1).get();
+        const tutorProfile = profSnap.empty ? null : ({ id: profSnap.docs[0].id, ...profSnap.docs[0].data() } as any);
+        if (tutorProfile && session.tutorId === tutorProfile.id) {
+          isAuthorized = true;
+        }
+      } else if (user.role === "admin") {
+        isAuthorized = true;
+      }
+
+      if (!isAuthorized) {
+        return res.status(403).json({ message: "Not authorized to view this quiz", fieldErrors: {} });
+      }
+
+      // Get quiz by quizId from session or by sessionId query
+      let quizSnap;
+      if (session.quizId) {
+        quizSnap = await fdb!.collection("session_quizzes").doc(session.quizId).get();
+      } else {
+        const quizzes = await fdb!.collection("session_quizzes").where("sessionId", "==", sessionId).limit(1).get();
+        quizSnap = quizzes.empty ? null : quizzes.docs[0];
+      }
+
+      if (!quizSnap || !quizSnap.exists) {
+        return res.status(404).json({ message: "Quiz not found for this session", fieldErrors: {} });
+      }
+
+      const quiz = { id: quizSnap.id, ...quizSnap.data() };
+
+      // Get student's attempt if they're a student
+      if (user.role === "student") {
+        const attemptSnap = await fdb!.collection("quiz_attempts")
+          .where("quizId", "==", quizSnap.id)
+          .where("studentId", "==", user.id)
+          .limit(1)
+          .get();
+
+        if (!attemptSnap.empty) {
+          const attempt = { id: attemptSnap.docs[0].id, ...attemptSnap.docs[0].data() };
+          res.json({ quiz, attempt });
+          return;
+        }
+      }
+
+      res.json({ quiz, attempt: null });
+    } catch (error) {
+      console.error("Error fetching quiz:", error);
+      res.status(500).json({ message: "Failed to fetch quiz", fieldErrors: {} });
+    }
+  });
+
+  // Submit quiz answers
+  app.post("/api/sessions/:id/quiz/submit", requireUser, async (req, res) => {
+    try {
+      const user = req.user!;
+      const sessionId = req.params.id;
+      const { answers } = req.body; // answers: { questionIndex: selectedAnswer }
+
+      if (user.role !== "student") {
+        return res.status(403).json({ message: "Only students can submit quiz answers", fieldErrors: {} });
+      }
+
+      const sessionRef = fdb!.collection("tutoring_sessions").doc(sessionId);
+      const sessionSnap = await sessionRef.get();
+      if (!sessionSnap.exists) {
+        return res.status(404).json({ message: "Session not found", fieldErrors: {} });
+      }
+      const session = { id: sessionSnap.id, ...(sessionSnap.data() as any) } as any;
+
+      // Verify student is authorized
+      if (session.studentId !== user.id) {
+        return res.status(403).json({ message: "Not authorized to submit answers for this quiz", fieldErrors: {} });
+      }
+
+      // Get quiz
+      let quizSnap;
+      if (session.quizId) {
+        quizSnap = await fdb!.collection("session_quizzes").doc(session.quizId).get();
+      } else {
+        const quizzes = await fdb!.collection("session_quizzes").where("sessionId", "==", sessionId).limit(1).get();
+        quizSnap = quizzes.empty ? null : quizzes.docs[0];
+      }
+
+      if (!quizSnap || !quizSnap.exists) {
+        return res.status(404).json({ message: "Quiz not found", fieldErrors: {} });
+      }
+
+      const quiz = { id: quizSnap.id, ...quizSnap.data() } as any;
+
+      // Calculate score
+      let correctCount = 0;
+      const totalQuestions = quiz.questions.length;
+      const detailedResults: any[] = [];
+
+      quiz.questions.forEach((question: any, index: number) => {
+        const studentAnswer = answers[index];
+        const isCorrect = studentAnswer === question.correctAnswer;
+        if (isCorrect) correctCount++;
+
+        detailedResults.push({
+          questionIndex: index,
+          question: question.question,
+          studentAnswer,
+          correctAnswer: question.correctAnswer,
+          isCorrect,
+          explanation: question.explanation,
+          topic: question.topic,
+        });
+      });
+
+      const score = Math.round((correctCount / totalQuestions) * 100);
+
+      // Check if attempt already exists
+      const existingAttempt = await fdb!.collection("quiz_attempts")
+        .where("quizId", "==", quizSnap.id)
+        .where("studentId", "==", user.id)
+        .limit(1)
+        .get();
+
+      let attemptRef;
+      if (!existingAttempt.empty) {
+        // Update existing attempt
+        attemptRef = existingAttempt.docs[0].ref;
+        await attemptRef.update({
+          answers,
+          score,
+          correctCount,
+          totalQuestions,
+          detailedResults,
+          completedAt: now(),
+          updatedAt: now(),
+        });
+      } else {
+        // Create new attempt
+        attemptRef = fdb!.collection("quiz_attempts").doc();
+        await attemptRef.set({
+          quizId: quizSnap.id,
+          sessionId,
+          studentId: user.id,
+          answers,
+          score,
+          correctCount,
+          totalQuestions,
+          detailedResults,
+          completedAt: now(),
+          createdAt: now(),
+        });
+      }
+
+      const attempt = await attemptRef.get();
+      res.json({
+        id: attempt.id,
+        ...attempt.data(),
+        message: `Quiz completed! You scored ${score}% (${correctCount}/${totalQuestions} correct)`
+      });
+    } catch (error) {
+      console.error("Error submitting quiz:", error);
+      res.status(500).json({ message: "Failed to submit quiz", fieldErrors: {} });
+    }
+  });
 
   // === REVIEWS ===
   app.get("/api/reviews/:tutorId", async (req, res) => {
@@ -2199,6 +3156,84 @@ app.get("/api/tutors/:id", async (req, res) => {
     );
   }
 
+  // Phone number detection function
+  function containsPhoneNumber(text: string): boolean {
+    // Common phone number patterns:
+    // - International: +1234567890, +1 234 567 8900, +1-234-567-8900
+    // - US/Local: (123) 456-7890, 123-456-7890, 123.456.7890, 12345678
+    // - With country code: 0012345678
+    // - 8-15 digits (changed from 10-15 to catch more patterns)
+    const phonePatterns = [
+      /\+?\d{1,3}[\s.-]?\(?\d{2,4}\)?[\s.-]?\d{3,4}[\s.-]?\d{2,4}/g, // International format
+      /\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{2,4}/g, // US format variations
+      /\d{8,15}/g, // Simple 8-15 digit sequences
+      /\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d/g, // Spaced digits
+    ];
+
+    return phonePatterns.some(pattern => pattern.test(text));
+  }
+
+  // Check if message is mostly numeric (potential number splitting attempt)
+  function isMostlyNumeric(text: string): boolean {
+    const cleanText = text.replace(/\s/g, '');
+    if (cleanText.length === 0) return false;
+
+    const digitCount = (cleanText.match(/\d/g) || []).length;
+    const digitRatio = digitCount / cleanText.length;
+
+    // If more than 60% digits, or it's just 1-3 digits, flag it
+    return digitRatio > 0.6 || /^\d{1,3}$/.test(cleanText);
+  }
+
+  // In-memory store for tracking recent messages (simple rate limiting)
+  // In production, consider using Redis or similar
+  const recentMessagesStore = new Map<string, Array<{ content: string; timestamp: number }>>();
+
+  function checkRapidNumericMessages(userId: string, receiverId: string, content: string): string | null {
+    const conversationKey = [userId, receiverId].sort().join('_');
+    const now = Date.now();
+    const timeWindow = 30000; // 30 seconds
+    const maxNumericMessages = 3; // Max 3 numeric messages in time window
+
+    // Get recent messages for this conversation
+    let recentMessages = recentMessagesStore.get(conversationKey) || [];
+
+    // Clean up old messages (older than time window)
+    recentMessages = recentMessages.filter(msg => now - msg.timestamp < timeWindow);
+
+    // Check if current message is mostly numeric
+    const isCurrentNumeric = isMostlyNumeric(content);
+
+    if (isCurrentNumeric) {
+      // Count recent numeric messages
+      const recentNumericCount = recentMessages.filter(msg => isMostlyNumeric(msg.content)).length;
+
+      if (recentNumericCount >= maxNumericMessages) {
+        return "You're sending numbers too quickly. Please slow down and send complete messages. Sharing phone numbers is not allowed. If you believe this was a mistake, please contact an administrator.";
+      }
+
+      // Check if sending single digits in sequence (potential phone number)
+      if (/^\d{1,3}$/.test(content.trim())) {
+        const recentSingleDigits = recentMessages.filter(msg => /^\d{1,3}$/.test(msg.content.trim()));
+
+        if (recentSingleDigits.length >= 2) {
+          return "Please avoid sending numbers one by one. If you need to share information, send it in a complete sentence. If you believe this was a mistake, please contact an administrator.";
+        }
+      }
+    }
+
+    // Add current message to store
+    recentMessages.push({ content, timestamp: now });
+    recentMessagesStore.set(conversationKey, recentMessages);
+
+    // Clean up store periodically (keep only last 20 messages per conversation)
+    if (recentMessages.length > 20) {
+      recentMessagesStore.set(conversationKey, recentMessages.slice(-20));
+    }
+
+    return null; // No violation detected
+  }
+
   // GET /api/messages/:otherUserId  -> full conversation between current user and :otherUserId
   app.get("/api/messages/:otherUserId", requireUser, async (req, res) => {
     try {
@@ -2277,6 +3312,56 @@ app.get("/api/tutors/:id", async (req, res) => {
       const studentId = me.role === "student" ? me.id : (otherUser.id as string);
       const tutorId = me.role === "tutor" ? me.id : (otherUser.id as string);
 
+      // Check for rapid numeric messages (rate limiting)
+      const rapidMessageError = checkRapidNumericMessages(me.id, body.receiverId, body.content);
+      if (rapidMessageError) {
+        return res.status(400).json({
+          message: rapidMessageError,
+          fieldErrors: {},
+          blocked: true,
+        });
+      }
+
+      // Check for phone numbers in the message content - BLOCK if found
+      const hasPhoneNumber = containsPhoneNumber(body.content);
+
+      if (hasPhoneNumber) {
+        // Create admin notification for phone number violation attempt
+        try {
+          const senderName = `${me.firstName || ""} ${me.lastName || ""}`.trim() || "Unknown User";
+          const receiverName = `${otherUser.firstName || ""} ${otherUser.lastName || ""}`.trim() || "Unknown User";
+
+          await fdb!.collection("notifications").add({
+            type: "PHONE_NUMBER_VIOLATION",
+            title: "Phone Number Detection - Message Blocked",
+            body: `${senderName} (${me.role}) attempted to share a phone number with ${receiverName} (${otherUser.role}). Message was blocked.`,
+            audience: "admin",
+            isRead: false,
+            createdAt: now(),
+            data: {
+              senderId: me.id,
+              senderName,
+              senderRole: me.role,
+              receiverId: body.receiverId,
+              receiverName,
+              receiverRole: otherUser.role,
+              messageContent: body.content,
+              blocked: true,
+            },
+          });
+        } catch (notifError) {
+          console.error("Failed to create phone number violation notification:", notifError);
+        }
+
+        // BLOCK the message - do NOT send it
+        return res.status(400).json({
+          message: "Your message was blocked because it appears to contain a phone number. Sharing phone numbers is not allowed on this platform. This violation has been reported to administrators. If you believe this was a mistake, please contact an administrator to appeal.",
+          fieldErrors: {},
+          blocked: true,
+        });
+      }
+
+      // If all checks pass, send the message
       const docRef = await fdb!.collection("messages").add({
         senderId: me.id,
         receiverId: body.receiverId,
@@ -2291,7 +3376,7 @@ app.get("/api/tutors/:id", async (req, res) => {
       const data = { id: snap.id, ...(snap.data() as any) };
 
       const mapUsers = await batchLoadMap<any>("users", [me.id, body.receiverId]);
-      const resp = {
+      const resp: any = {
         id: data.id,
         senderId: data.senderId,
         receiverId: data.receiverId,
@@ -2496,6 +3581,11 @@ app.get("/api/tutors/:id", async (req, res) => {
           batch.set(ref, { name: s.name, description: s.description, category: s.category, createdAt: now() });
         });
         await batch.commit();
+
+        // Invalidate subjects cache
+        cachedSubjects = null;
+        console.log("[Cache] Subjects cache invalidated");
+
         res.json({ message: "Basic subjects seeded successfully" });
       } else {
         res.json({ message: "Subjects already exist" });
@@ -2623,6 +3713,10 @@ app.get("/api/tutors/:id", async (req, res) => {
       });
     }
   });
+
+  // === STUDY BUDDY ROUTES ===
+  // Mount all Study Buddy API routes
+  app.use("/api/study-buddy", studyBuddyRoutes);
 
   const httpServer = createServer(app);
   return httpServer;
