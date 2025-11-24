@@ -134,11 +134,11 @@ export function ChatWindow({ userId, onClose }: ChatWindowProps) {
 
   return (
     <div
-      className="fixed bottom-4 right-4 w-80 max-h-[80vh] z-50 flex flex-col"
+      className="fixed bottom-4 right-4 w-80 h-[600px] z-50 flex flex-col"
       data-testid="chat-window"
     >
       {/* IMPORTANT: make Card a flex column so footer stays visible */}
-      <Card className="h-full shadow-xl flex flex-col">
+      <Card className="h-full shadow-xl flex flex-col overflow-hidden">
         <CardHeader className="p-4 bg-primary text-white">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -172,9 +172,9 @@ export function ChatWindow({ userId, onClose }: ChatWindowProps) {
         </CardHeader>
 
         {/* IMPORTANT: CardContent is flex-1 column; ScrollArea flex-1; input fixed at bottom */}
-        <CardContent className="p-0 flex-1 flex flex-col">
+        <CardContent className="p-0 flex-1 flex flex-col min-h-0">
           {/* Messages */}
-          <ScrollArea className="flex-1 px-4 pt-4 pb-2">
+          <ScrollArea className="flex-1 px-4 pt-4 pb-2 min-h-0">
             {isLoading ? (
               <div className="space-y-3">
                 {[...Array(3)].map((_, i) => (
@@ -238,7 +238,7 @@ export function ChatWindow({ userId, onClose }: ChatWindowProps) {
           </ScrollArea>
 
           {/* Message Input */}
-          <div className="p-4 border-t">
+          <div className="p-4 border-t flex-shrink-0">
             <form onSubmit={handleSendMessage} className="flex space-x-2">
               <Input
                 value={newMessage}

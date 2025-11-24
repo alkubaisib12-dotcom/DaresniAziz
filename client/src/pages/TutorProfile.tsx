@@ -12,6 +12,8 @@ import { useAuth } from "@/components/AuthProvider";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatMoney } from "@/lib/currency";
+import { ChatWindow } from "@/components/ChatWindow";
+import { MessageSquare } from "lucide-react";
 
 /** ======= Minimal local types ======= */
 type UserLite = {
@@ -107,6 +109,9 @@ export default function TutorProfile() {
   // For review form
   const [ratingInput, setRatingInput] = useState<number>(5);
   const [commentInput, setCommentInput] = useState<string>("");
+
+  // For chat window
+  const [showChat, setShowChat] = useState<boolean>(false);
 
   /** ------- Load this tutor by id (uses apiRequest -> JSON) ------- */
   const {
@@ -435,6 +440,18 @@ export default function TutorProfile() {
                           <i className="fas fa-calendar-plus mr-2" />
                           Book Selected Time
                         </Button>
+                        {user?.role === "student" && tutor.userId && (
+                          <Button
+                            size="lg"
+                            variant="outline"
+                            className="px-8"
+                            onClick={() => setShowChat(true)}
+                            data-testid="button-start-chat"
+                          >
+                            <MessageSquare className="h-5 w-5 mr-2" />
+                            Message Tutor
+                          </Button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -757,6 +774,11 @@ export default function TutorProfile() {
           </div>
         </div>
       </div>
+
+      {/* Chat Window */}
+      {showChat && tutor?.userId && (
+        <ChatWindow userId={tutor.userId} onClose={() => setShowChat(false)} />
+      )}
     </div>
   );
 }
