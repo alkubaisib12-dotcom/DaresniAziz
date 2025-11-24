@@ -69,25 +69,24 @@ export function ChatWindow({ userId, onClose }: ChatWindowProps) {
         }),
       });
     },
-    onSuccess: (data: any) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/messages", userId] });
       setNewMessage("");
-
-      // Show warning if phone number was detected
-      if (data?.warning) {
-        toast({
-          title: "Warning",
-          description: data.warning,
-          variant: "destructive",
-        });
-      }
     },
-    onError: () => {
+    onError: (error: any) => {
+      // Handle blocked messages with specific error messages
+      const errorMessage = error?.message || "Failed to send message";
+      const isBlocked = error?.blocked === true;
+
       toast({
-        title: "Error",
-        description: "Failed to send message",
+        title: isBlocked ? "⚠️ Message Blocked" : "Error",
+        description: errorMessage,
         variant: "destructive",
+        duration: isBlocked ? 7000 : 5000, // Show blocked messages longer
       });
+
+      // Don't clear the message input if it was blocked, so user can edit it
+      // Message will remain in the input field for user to modify
     },
   });
 

@@ -3147,15 +3147,78 @@ I'm here to help you understand the concepts better and practice! Feel free to a
   function containsPhoneNumber(text: string): boolean {
     // Common phone number patterns:
     // - International: +1234567890, +1 234 567 8900, +1-234-567-8900
-    // - US/Local: (123) 456-7890, 123-456-7890, 123.456.7890, 1234567890
-    // - With country code: 001234567890
+    // - US/Local: (123) 456-7890, 123-456-7890, 123.456.7890, 12345678
+    // - With country code: 0012345678
+    // - 8-15 digits (changed from 10-15 to catch more patterns)
     const phonePatterns = [
-      /\+?\d{1,3}[\s.-]?\(?\d{2,4}\)?[\s.-]?\d{3,4}[\s.-]?\d{3,4}/g, // International format
-      /\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g, // US format
-      /\d{10,15}/g, // Simple 10-15 digit sequences
+      /\+?\d{1,3}[\s.-]?\(?\d{2,4}\)?[\s.-]?\d{3,4}[\s.-]?\d{2,4}/g, // International format
+      /\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{2,4}/g, // US format variations
+      /\d{8,15}/g, // Simple 8-15 digit sequences
+      /\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d[\s.-]{0,2}\d/g, // Spaced digits
     ];
 
     return phonePatterns.some(pattern => pattern.test(text));
+  }
+
+  // Check if message is mostly numeric (potential number splitting attempt)
+  function isMostlyNumeric(text: string): boolean {
+    const cleanText = text.replace(/\s/g, '');
+    if (cleanText.length === 0) return false;
+
+    const digitCount = (cleanText.match(/\d/g) || []).length;
+    const digitRatio = digitCount / cleanText.length;
+
+    // If more than 60% digits, or it's just 1-3 digits, flag it
+    return digitRatio > 0.6 || /^\d{1,3}$/.test(cleanText);
+  }
+
+  // In-memory store for tracking recent messages (simple rate limiting)
+  // In production, consider using Redis or similar
+  const recentMessagesStore = new Map<string, Array<{ content: string; timestamp: number }>>();
+
+  function checkRapidNumericMessages(userId: string, receiverId: string, content: string): string | null {
+    const conversationKey = [userId, receiverId].sort().join('_');
+    const now = Date.now();
+    const timeWindow = 30000; // 30 seconds
+    const maxNumericMessages = 3; // Max 3 numeric messages in time window
+
+    // Get recent messages for this conversation
+    let recentMessages = recentMessagesStore.get(conversationKey) || [];
+
+    // Clean up old messages (older than time window)
+    recentMessages = recentMessages.filter(msg => now - msg.timestamp < timeWindow);
+
+    // Check if current message is mostly numeric
+    const isCurrentNumeric = isMostlyNumeric(content);
+
+    if (isCurrentNumeric) {
+      // Count recent numeric messages
+      const recentNumericCount = recentMessages.filter(msg => isMostlyNumeric(msg.content)).length;
+
+      if (recentNumericCount >= maxNumericMessages) {
+        return "You're sending numbers too quickly. Please slow down and send complete messages. Sharing phone numbers is not allowed.";
+      }
+
+      // Check if sending single digits in sequence (potential phone number)
+      if (/^\d{1,3}$/.test(content.trim())) {
+        const recentSingleDigits = recentMessages.filter(msg => /^\d{1,3}$/.test(msg.content.trim()));
+
+        if (recentSingleDigits.length >= 2) {
+          return "Please avoid sending numbers one by one. If you need to share information, send it in a complete sentence.";
+        }
+      }
+    }
+
+    // Add current message to store
+    recentMessages.push({ content, timestamp: now });
+    recentMessagesStore.set(conversationKey, recentMessages);
+
+    // Clean up store periodically (keep only last 20 messages per conversation)
+    if (recentMessages.length > 20) {
+      recentMessagesStore.set(conversationKey, recentMessages.slice(-20));
+    }
+
+    return null; // No violation detected
   }
 
   // GET /api/messages/:otherUserId  -> full conversation between current user and :otherUserId
@@ -3236,22 +3299,29 @@ I'm here to help you understand the concepts better and practice! Feel free to a
       const studentId = me.role === "student" ? me.id : (otherUser.id as string);
       const tutorId = me.role === "tutor" ? me.id : (otherUser.id as string);
 
-      // Check for phone numbers in the message content
+      // Check for rapid numeric messages (rate limiting)
+      const rapidMessageError = checkRapidNumericMessages(me.id, body.receiverId, body.content);
+      if (rapidMessageError) {
+        return res.status(400).json({
+          message: rapidMessageError,
+          fieldErrors: {},
+          blocked: true,
+        });
+      }
+
+      // Check for phone numbers in the message content - BLOCK if found
       const hasPhoneNumber = containsPhoneNumber(body.content);
-      let phoneWarning: string | undefined;
 
       if (hasPhoneNumber) {
-        phoneWarning = "Warning: Sharing phone numbers is not allowed. This violation has been reported to administrators.";
-
-        // Create admin notification for phone number violation
+        // Create admin notification for phone number violation attempt
         try {
           const senderName = `${me.firstName || ""} ${me.lastName || ""}`.trim() || "Unknown User";
           const receiverName = `${otherUser.firstName || ""} ${otherUser.lastName || ""}`.trim() || "Unknown User";
 
           await fdb!.collection("notifications").add({
             type: "PHONE_NUMBER_VIOLATION",
-            title: "Phone Number Shared in Chat",
-            body: `${senderName} (${me.role}) attempted to share a phone number with ${receiverName} (${otherUser.role})`,
+            title: "Phone Number Detection - Message Blocked",
+            body: `${senderName} (${me.role}) attempted to share a phone number with ${receiverName} (${otherUser.role}). Message was blocked.`,
             audience: "admin",
             isRead: false,
             createdAt: now(),
@@ -3263,13 +3333,22 @@ I'm here to help you understand the concepts better and practice! Feel free to a
               receiverName,
               receiverRole: otherUser.role,
               messageContent: body.content,
+              blocked: true,
             },
           });
         } catch (notifError) {
           console.error("Failed to create phone number violation notification:", notifError);
         }
+
+        // BLOCK the message - do NOT send it
+        return res.status(400).json({
+          message: "Your message was blocked because it appears to contain a phone number. Sharing phone numbers is not allowed. This violation has been reported to administrators.",
+          fieldErrors: {},
+          blocked: true,
+        });
       }
 
+      // If all checks pass, send the message
       const docRef = await fdb!.collection("messages").add({
         senderId: me.id,
         receiverId: body.receiverId,
@@ -3294,11 +3373,6 @@ I'm here to help you understand the concepts better and practice! Feel free to a
         sender: mapUsers.get(data.senderId) || null,
         receiver: mapUsers.get(data.receiverId) || null,
       };
-
-      // Add warning to response if phone number was detected
-      if (phoneWarning) {
-        resp.warning = phoneWarning;
-      }
 
       // Create NEW_MESSAGE notification for the receiver
       try {
