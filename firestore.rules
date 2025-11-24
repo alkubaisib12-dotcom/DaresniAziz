@@ -140,11 +140,11 @@ service cloud.firestore {
        ======================================== */
 
     match /messages/{mid} {
-      // Only sender or receiver can read
-      allow read: if isSignedIn() && (
+      // Only sender, receiver, or admin can read
+      allow read: if isAdmin() || (isSignedIn() && (
         request.auth.uid == resource.data.senderId ||
         request.auth.uid == resource.data.receiverId
-      );
+      ));
 
       // Only sender can create
       allow create: if isSignedIn()

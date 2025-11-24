@@ -69,9 +69,18 @@ export function ChatWindow({ userId, onClose }: ChatWindowProps) {
         }),
       });
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/messages", userId] });
       setNewMessage("");
+
+      // Show warning if phone number was detected
+      if (data?.warning) {
+        toast({
+          title: "Warning",
+          description: data.warning,
+          variant: "destructive",
+        });
+      }
     },
     onError: () => {
       toast({

@@ -135,6 +135,28 @@ export interface Message {
 }
 
 /* =========================
+ *      NOTIFICATIONS
+ * =======================*/
+export type NotificationType =
+  | 'NEW_MESSAGE'
+  | 'TUTOR_VERIFIED'
+  | 'SESSION_REMINDER'
+  | 'PHONE_NUMBER_VIOLATION'
+  | 'PENDING_TUTOR_APPROVAL';
+
+export interface Notification {
+  id?: string;
+  type: NotificationType;
+  title: string;
+  body?: string;
+  audience?: 'tutor' | 'admin' | 'user';
+  userId?: string;            // targeted user (optional for admin notifications)
+  data?: Record<string, unknown>;
+  isRead?: boolean;
+  createdAt?: Date;
+}
+
+/* =========================
  *       FILE UPLOADS
  * =======================*/
 export interface FileUpload {

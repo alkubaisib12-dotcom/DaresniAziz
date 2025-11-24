@@ -1403,6 +1403,124 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET /api/admin/students/:userId/messages -> all messages for a student with all tutors
+  app.get("/api/admin/students/:userId/messages", requireUser, requireAdmin, async (req, res) => {
+    try {
+      const studentId = req.params.userId;
+
+      // Verify the user is a student
+      const student = await getDoc<any>("users", studentId);
+      if (!student) {
+        return res.status(404).json({ message: "Student not found", fieldErrors: {} });
+      }
+      if (student.role !== "student") {
+        return res.status(400).json({ message: "User is not a student", fieldErrors: {} });
+      }
+
+      // Fetch all messages where student is sender or receiver
+      const col = fdb!.collection("messages");
+      const [sentSnap, receivedSnap] = await Promise.all([
+        col.where("senderId", "==", studentId).get(),
+        col.where("receiverId", "==", studentId).get(),
+      ]);
+
+      const allMessages = [...sentSnap.docs, ...receivedSnap.docs].map((d) => ({
+        id: d.id,
+        ...(d.data() as any),
+      }));
+
+      // Sort by timestamp
+      allMessages.sort((a, b) => coerceMillis(a.createdAt) - coerceMillis(b.createdAt));
+
+      // Get all unique user IDs involved in conversations
+      const userIds = new Set<string>();
+      allMessages.forEach((m) => {
+        userIds.add(m.senderId);
+        userIds.add(m.receiverId);
+      });
+
+      // Load all users
+      const usersMap = await batchLoadMap<any>("users", Array.from(userIds));
+
+      // Enrich messages with user data
+      const enrichedMessages = allMessages.map((m) => ({
+        id: m.id,
+        senderId: m.senderId,
+        receiverId: m.receiverId,
+        content: m.content,
+        fileUrl: m.fileUrl || null,
+        read: !!m.read,
+        createdAt: new Date(coerceMillis(m.createdAt)).toISOString(),
+        sender: usersMap.get(m.senderId) || null,
+        receiver: usersMap.get(m.receiverId) || null,
+      }));
+
+      res.json(enrichedMessages);
+    } catch (error) {
+      console.error("Error fetching student messages:", error);
+      res.status(500).json({ message: "Failed to fetch student messages", fieldErrors: {} });
+    }
+  });
+
+  // GET /api/admin/tutors/:userId/messages -> all messages for a tutor with all students
+  app.get("/api/admin/tutors/:userId/messages", requireUser, requireAdmin, async (req, res) => {
+    try {
+      const tutorId = req.params.userId;
+
+      // Verify the user is a tutor
+      const tutor = await getDoc<any>("users", tutorId);
+      if (!tutor) {
+        return res.status(404).json({ message: "Tutor not found", fieldErrors: {} });
+      }
+      if (tutor.role !== "tutor") {
+        return res.status(400).json({ message: "User is not a tutor", fieldErrors: {} });
+      }
+
+      // Fetch all messages where tutor is sender or receiver
+      const col = fdb!.collection("messages");
+      const [sentSnap, receivedSnap] = await Promise.all([
+        col.where("senderId", "==", tutorId).get(),
+        col.where("receiverId", "==", tutorId).get(),
+      ]);
+
+      const allMessages = [...sentSnap.docs, ...receivedSnap.docs].map((d) => ({
+        id: d.id,
+        ...(d.data() as any),
+      }));
+
+      // Sort by timestamp
+      allMessages.sort((a, b) => coerceMillis(a.createdAt) - coerceMillis(b.createdAt));
+
+      // Get all unique user IDs involved in conversations
+      const userIds = new Set<string>();
+      allMessages.forEach((m) => {
+        userIds.add(m.senderId);
+        userIds.add(m.receiverId);
+      });
+
+      // Load all users
+      const usersMap = await batchLoadMap<any>("users", Array.from(userIds));
+
+      // Enrich messages with user data
+      const enrichedMessages = allMessages.map((m) => ({
+        id: m.id,
+        senderId: m.senderId,
+        receiverId: m.receiverId,
+        content: m.content,
+        fileUrl: m.fileUrl || null,
+        read: !!m.read,
+        createdAt: new Date(coerceMillis(m.createdAt)).toISOString(),
+        sender: usersMap.get(m.senderId) || null,
+        receiver: usersMap.get(m.receiverId) || null,
+      }));
+
+      res.json(enrichedMessages);
+    } catch (error) {
+      console.error("Error fetching tutor messages:", error);
+      res.status(500).json({ message: "Failed to fetch tutor messages", fieldErrors: {} });
+    }
+  });
+
   app.get("/api/admin/tutors", requireUser, requireAdmin, async (_req, res) => {
     try {
       const profs = await listCollection<any>("tutor_profiles");
@@ -3025,6 +3143,21 @@ I'm here to help you understand the concepts better and practice! Feel free to a
     );
   }
 
+  // Phone number detection function
+  function containsPhoneNumber(text: string): boolean {
+    // Common phone number patterns:
+    // - International: +1234567890, +1 234 567 8900, +1-234-567-8900
+    // - US/Local: (123) 456-7890, 123-456-7890, 123.456.7890, 1234567890
+    // - With country code: 001234567890
+    const phonePatterns = [
+      /\+?\d{1,3}[\s.-]?\(?\d{2,4}\)?[\s.-]?\d{3,4}[\s.-]?\d{3,4}/g, // International format
+      /\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g, // US format
+      /\d{10,15}/g, // Simple 10-15 digit sequences
+    ];
+
+    return phonePatterns.some(pattern => pattern.test(text));
+  }
+
   // GET /api/messages/:otherUserId  -> full conversation between current user and :otherUserId
   app.get("/api/messages/:otherUserId", requireUser, async (req, res) => {
     try {
@@ -3103,6 +3236,40 @@ I'm here to help you understand the concepts better and practice! Feel free to a
       const studentId = me.role === "student" ? me.id : (otherUser.id as string);
       const tutorId = me.role === "tutor" ? me.id : (otherUser.id as string);
 
+      // Check for phone numbers in the message content
+      const hasPhoneNumber = containsPhoneNumber(body.content);
+      let phoneWarning: string | undefined;
+
+      if (hasPhoneNumber) {
+        phoneWarning = "Warning: Sharing phone numbers is not allowed. This violation has been reported to administrators.";
+
+        // Create admin notification for phone number violation
+        try {
+          const senderName = `${me.firstName || ""} ${me.lastName || ""}`.trim() || "Unknown User";
+          const receiverName = `${otherUser.firstName || ""} ${otherUser.lastName || ""}`.trim() || "Unknown User";
+
+          await fdb!.collection("notifications").add({
+            type: "PHONE_NUMBER_VIOLATION",
+            title: "Phone Number Shared in Chat",
+            body: `${senderName} (${me.role}) attempted to share a phone number with ${receiverName} (${otherUser.role})`,
+            audience: "admin",
+            isRead: false,
+            createdAt: now(),
+            data: {
+              senderId: me.id,
+              senderName,
+              senderRole: me.role,
+              receiverId: body.receiverId,
+              receiverName,
+              receiverRole: otherUser.role,
+              messageContent: body.content,
+            },
+          });
+        } catch (notifError) {
+          console.error("Failed to create phone number violation notification:", notifError);
+        }
+      }
+
       const docRef = await fdb!.collection("messages").add({
         senderId: me.id,
         receiverId: body.receiverId,
@@ -3117,7 +3284,7 @@ I'm here to help you understand the concepts better and practice! Feel free to a
       const data = { id: snap.id, ...(snap.data() as any) };
 
       const mapUsers = await batchLoadMap<any>("users", [me.id, body.receiverId]);
-      const resp = {
+      const resp: any = {
         id: data.id,
         senderId: data.senderId,
         receiverId: data.receiverId,
@@ -3127,6 +3294,11 @@ I'm here to help you understand the concepts better and practice! Feel free to a
         sender: mapUsers.get(data.senderId) || null,
         receiver: mapUsers.get(data.receiverId) || null,
       };
+
+      // Add warning to response if phone number was detected
+      if (phoneWarning) {
+        resp.warning = phoneWarning;
+      }
 
       // Create NEW_MESSAGE notification for the receiver
       try {

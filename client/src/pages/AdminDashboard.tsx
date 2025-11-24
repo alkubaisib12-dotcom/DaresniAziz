@@ -55,6 +55,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ChatHistoryDialog } from "@/components/ChatHistoryDialog";
+import { MessageSquare } from "lucide-react";
 
 interface Notification {
   id: string;
@@ -173,6 +175,8 @@ export default function AdminDashboard() {
   const [tutorToReject, setTutorToReject] = useState<TutorProfile | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [selectedTutorForSessions, setSelectedTutorForSessions] = useState<TutorProfile | null>(null);
+  const [studentChatHistory, setStudentChatHistory] = useState<{ id: string; name: string } | null>(null);
+  const [tutorChatHistory, setTutorChatHistory] = useState<{ id: string; name: string } | null>(null);
 
   // Date range filter state
   type DatePreset = "all" | "today" | "week" | "month" | "year" | "custom";
@@ -1334,6 +1338,17 @@ export default function AdminDashboard() {
                           View Details
                         </Button>
                         <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setStudentChatHistory({
+                            id: student.id,
+                            name: `${student.firstName} ${student.lastName}`,
+                          })}
+                        >
+                          <MessageSquare className="h-4 w-4 mr-1" />
+                          Chat History
+                        </Button>
+                        <Button
                           variant="destructive"
                           size="sm"
                           onClick={() =>
@@ -1454,6 +1469,17 @@ export default function AdminDashboard() {
                         >
                           <Calendar className="h-4 w-4 mr-1" />
                           Sessions
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setTutorChatHistory({
+                            id: tutor.user?.id || "",
+                            name: `${tutor.user?.firstName} ${tutor.user?.lastName}`,
+                          })}
+                        >
+                          <MessageSquare className="h-4 w-4 mr-1" />
+                          Chat History
                         </Button>
                         {!tutor.profile.isVerified && (
                           <Button
@@ -2013,6 +2039,28 @@ export default function AdminDashboard() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Student Chat History Dialog */}
+      {studentChatHistory && (
+        <ChatHistoryDialog
+          userId={studentChatHistory.id}
+          userType="student"
+          userName={studentChatHistory.name}
+          open={!!studentChatHistory}
+          onOpenChange={(open) => !open && setStudentChatHistory(null)}
+        />
+      )}
+
+      {/* Tutor Chat History Dialog */}
+      {tutorChatHistory && (
+        <ChatHistoryDialog
+          userId={tutorChatHistory.id}
+          userType="tutor"
+          userName={tutorChatHistory.name}
+          open={!!tutorChatHistory}
+          onOpenChange={(open) => !open && setTutorChatHistory(null)}
+        />
+      )}
     </div>
   );
 }
