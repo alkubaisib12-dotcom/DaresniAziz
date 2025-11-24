@@ -57,7 +57,6 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChatHistoryDialog } from "@/components/ChatHistoryDialog";
-import { MessageSquare } from "lucide-react";
 
 interface Notification {
   id: string;
@@ -594,37 +593,6 @@ export default function AdminDashboard() {
   // Count ALL unread notifications (not just filtered) for the "Mark All as Read" button
   const unreadCount = notifications.filter((n) => !n.isRead).length;
   const pendingCount = filteredPendingTutors.length;
-
-  const chatMessages = chatHistory?.messages || [];
-  const conversationMap = new Map<
-    string,
-    { key: string; student?: BasicUser | null; tutor?: BasicUser | null; messages: AdminMessage[] }
-  >();
-
-  chatMessages.forEach((msg) => {
-    const key = msg.conversationKey || `${msg.studentId}_${msg.tutorId}`;
-    const existing = conversationMap.get(key) || {
-      key,
-      student: msg.student,
-      tutor: msg.tutor,
-      messages: [] as AdminMessage[],
-    };
-
-    existing.student = existing.student || msg.student;
-    existing.tutor = existing.tutor || msg.tutor;
-    existing.messages.push(msg);
-    conversationMap.set(key, existing);
-  });
-
-  const conversations = Array.from(conversationMap.values()).sort((a, b) => {
-    const lastA = a.messages[a.messages.length - 1]?.createdAt || "";
-    const lastB = b.messages[b.messages.length - 1]?.createdAt || "";
-    return new Date(lastB).getTime() - new Date(lastA).getTime();
-  });
-
-  const activeConversation =
-    conversations.find((c) => c.key === activeConversationKey) || conversations[0] || null;
-  const activeMessages = activeConversation?.messages || [];
 
   // IMPORTANT: this comes *after* all hooks, so hooks order is stable
   if (authLoading || !isAdmin) {
@@ -1534,18 +1502,6 @@ export default function AdminDashboard() {
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={!tutor.user?.id}
-                          onClick={() =>
-                            tutor.user?.id &&
-                            openChatHistory("tutor", tutor.user.id, formatUserName(tutor.user))
-                          }
-                        >
-                          <MessageSquare className="h-4 w-4 mr-1" />
-                          View Chats
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
                           onClick={() => setSelectedTutor(tutor)}
                         >
                           <Eye className="h-4 w-4 mr-1" />
@@ -1672,99 +1628,6 @@ export default function AdminDashboard() {
           </Card>
         </TabsContent>
       </Tabs>
-
-      <Dialog open={!!chatViewer} onOpenChange={(open) => !open && closeChatHistory()}>
-        <DialogContent className="max-w-5xl">
-          <DialogHeader>
-            <DialogTitle>Chat history</DialogTitle>
-            <DialogDescription>
-              Viewing conversations for {chatViewer?.name} as a {chatViewer?.mode}.
-            </DialogDescription>
-          </DialogHeader>
-
-          {chatHistoryLoading ? (
-            <div className="flex items-center justify-center py-6">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#9B1B30]" />
-            </div>
-          ) : conversations.length === 0 ? (
-            <div className="text-center py-6 text-muted-foreground">
-              <MessageSquare className="h-10 w-10 mx-auto mb-2 text-muted-foreground/50" />
-              <p>No messages found for this user yet.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                {conversations.map((conv) => {
-                  const counterpart = chatViewer?.mode === "student" ? conv.tutor : conv.student;
-                  const last = conv.messages[conv.messages.length - 1];
-
-                  return (
-                    <button
-                      key={conv.key}
-                      className={`w-full text-left p-3 rounded-lg border transition ${
-                        conv.key === activeConversation?.key
-                          ? "border-[#9B1B30] bg-rose-50"
-                          : "border-border bg-background hover:border-[#9B1B30]/50"
-                      }`}
-                      onClick={() => setActiveConversationKey(conv.key)}
-                    >
-                      <p className="font-semibold">
-                        {chatViewer?.mode === "student" ? "Tutor" : "Student"}: {formatUserName(counterpart)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {conv.messages.length} messages · Last {new Date(last.createdAt).toLocaleString()}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="md:col-span-2">
-                {activeConversation ? (
-                  <div className="space-y-3 max-h-[420px] overflow-y-auto">
-                    <div className="flex items-center justify-between bg-muted p-3 rounded-lg">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Student</p>
-                        <p className="font-semibold">{formatUserName(activeConversation.student)}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Tutor</p>
-                        <p className="font-semibold">{formatUserName(activeConversation.tutor)}</p>
-                      </div>
-                    </div>
-
-                    {activeMessages.map((msg) => {
-                      const isStudentMessage = msg.senderId === activeConversation.student?.id;
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`p-3 rounded-lg border ${
-                            isStudentMessage ? "bg-blue-50/70 border-blue-200" : "bg-emerald-50/70 border-emerald-200"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>{formatUserName(msg.sender)}</span>
-                            <span>{new Date(msg.createdAt).toLocaleString()}</span>
-                          </div>
-                          <p className="mt-2 text-sm whitespace-pre-wrap">{msg.content}</p>
-                        </div>
-                      );
-                    })}
-
-                    {activeMessages.length === 0 && (
-                      <div className="text-center text-muted-foreground py-6">
-                        No messages in this conversation yet.
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-center text-muted-foreground py-6">Select a conversation to view messages.</div>
-                )}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* Delete User Confirmation Dialog */}
       <AlertDialog open={!!userToDelete} onOpenChange={() => setUserToDelete(null)}>
