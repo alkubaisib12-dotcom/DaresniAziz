@@ -1058,6 +1058,116 @@ export default function AdminDashboard() {
                 </Card>
               )}
 
+              {/* Tutor Leaderboard */}
+              {rankedTutors.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <TrendingUp className="h-5 w-5" />
+                          Top Performing Tutors
+                        </CardTitle>
+                        <CardDescription>Ranked by overall performance score</CardDescription>
+                      </div>
+                      <Tabs value={tutorRankingTab} onValueChange={(v: any) => setTutorRankingTab(v)} className="w-auto">
+                        <TabsList className="grid grid-cols-4">
+                          <TabsTrigger value="overall">Overall</TabsTrigger>
+                          <TabsTrigger value="revenue">Revenue</TabsTrigger>
+                          <TabsTrigger value="sessions">Sessions</TabsTrigger>
+                          <TabsTrigger value="rating">Rating</TabsTrigger>
+                        </TabsList>
+                      </Tabs>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {/* Ranking Info */}
+                    {tutorRankingTab === "overall" && (
+                      <div className="mb-4 p-3 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg">
+                        <p className="text-sm font-medium mb-2">Overall Best Ranking Formula:</p>
+                        <div className="flex flex-wrap gap-3 text-xs">
+                          <Badge variant="secondary" className="bg-purple-100">40% Rating</Badge>
+                          <Badge variant="secondary" className="bg-blue-100">40% Sessions</Badge>
+                          <Badge variant="secondary" className="bg-green-100">20% Completion Rate</Badge>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Top 10 Tutors */}
+                    <div className="space-y-3">
+                      {rankedTutors.slice(0, 10).map((tutor, index) => (
+                        <div
+                          key={tutor.profile.id}
+                          className={`p-3 border rounded-lg flex items-center gap-4 ${
+                            index < 3 && tutorRankingTab === "overall"
+                              ? "border-2 border-yellow-400 bg-yellow-50/30"
+                              : "bg-muted/30"
+                          }`}
+                        >
+                          {/* Rank Badge */}
+                          <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold ${
+                            index === 0 ? "bg-yellow-500 text-white text-lg" :
+                            index === 1 ? "bg-gray-400 text-white text-lg" :
+                            index === 2 ? "bg-orange-600 text-white text-lg" :
+                            "bg-muted text-muted-foreground"
+                          }`}>
+                            {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `#${index + 1}`}
+                          </div>
+
+                          {/* Tutor Info */}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="font-semibold">
+                                {tutor.user?.firstName} {tutor.user?.lastName}
+                              </p>
+                              {tutor.profile.isVerified && (
+                                <Badge variant="default" className="bg-green-600 h-5 text-xs">✓</Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <CheckCircle className="h-3 w-3" />
+                                {tutor.stats?.averageRating?.toFixed(1) || "0.0"}/5
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <BookOpen className="h-3 w-3" />
+                                {tutor.stats?.completedSessions || 0} sessions
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <DollarSign className="h-3 w-3" />
+                                {formatMoney(tutor.stats?.totalRevenue || 0)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Score Badge */}
+                          {tutorRankingTab === "overall" && (
+                            <Badge variant="outline" className="bg-purple-100 font-bold">
+                              {tutor.overallScore.toFixed(1)}
+                            </Badge>
+                          )}
+                          {tutorRankingTab === "revenue" && (
+                            <Badge variant="outline" className="bg-green-100 font-bold">
+                              {formatMoney(tutor.stats?.totalRevenue || 0)}
+                            </Badge>
+                          )}
+                          {tutorRankingTab === "sessions" && (
+                            <Badge variant="outline" className="bg-blue-100 font-bold">
+                              {tutor.stats?.completedSessions || 0}
+                            </Badge>
+                          )}
+                          {tutorRankingTab === "rating" && (
+                            <Badge variant="outline" className="bg-yellow-100 font-bold">
+                              {tutor.stats?.averageRating?.toFixed(1) || "0.0"}⭐
+                            </Badge>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Quick Stats Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
@@ -1475,103 +1585,37 @@ export default function AdminDashboard() {
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
                 <GraduationCap className="h-5 w-5" />
-                <span>Tutor Rankings</span>
+                <span>All Tutors</span>
               </CardTitle>
               <CardDescription>
-                View and rank tutors by different metrics.
+                All tutors (verified and pending) on the platform.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {/* Ranking Sub-Tabs */}
-              <Tabs value={tutorRankingTab} onValueChange={(v: any) => setTutorRankingTab(v)} className="mb-6">
-                <TabsList className="grid w-full grid-cols-4">
-                  <TabsTrigger value="overall">
-                    <TrendingUp className="h-4 w-4 mr-2" />
-                    Overall Best
-                  </TabsTrigger>
-                  <TabsTrigger value="revenue">
-                    <DollarSign className="h-4 w-4 mr-2" />
-                    By Revenue
-                  </TabsTrigger>
-                  <TabsTrigger value="sessions">
-                    <BookOpen className="h-4 w-4 mr-2" />
-                    By Sessions
-                  </TabsTrigger>
-                  <TabsTrigger value="rating">
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    By Rating
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-
-              {/* Ranking Info Card */}
-              {tutorRankingTab === "overall" && (
-                <Card className="mb-6 bg-gradient-to-r from-purple-50 to-blue-50 border-purple-200">
-                  <CardContent className="p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-full p-2">
-                        <TrendingUp className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-lg mb-1">Overall Best Ranking</h4>
-                        <p className="text-sm text-muted-foreground mb-2">
-                          Tutors are ranked using a weighted scoring system:
-                        </p>
-                        <div className="flex flex-wrap gap-4 text-sm">
-                          <Badge variant="secondary" className="bg-purple-100">
-                            <CheckCircle className="h-3 w-3 mr-1" />
-                            40% Rating
-                          </Badge>
-                          <Badge variant="secondary" className="bg-blue-100">
-                            <BookOpen className="h-3 w-3 mr-1" />
-                            40% Sessions
-                          </Badge>
-                          <Badge variant="secondary" className="bg-green-100">
-                            <Activity className="h-3 w-3 mr-1" />
-                            20% Completion Rate
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
               {tutorsLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#9B1B30]" />
                 </div>
-              ) : rankedTutors.length === 0 ? (
+              ) : filteredAllTutors.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <GraduationCap className="h-12 w-12 mx-auto mb-4 text-muted-foreground/50" />
                   <p>No tutors registered yet</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {rankedTutors.map((tutor, index) => (
+                  {filteredAllTutors.map((tutor) => (
                     <div
                       key={tutor.profile.id}
-                      className={`p-4 border rounded-lg ${index < 3 && tutorRankingTab === "overall" ? "border-2 border-yellow-400 bg-yellow-50/30" : ""}`}
+                      className="p-4 border rounded-lg"
                     >
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex items-center space-x-3">
-                          {/* Ranking Badge */}
-                          <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-lg ${
-                            index === 0 ? "bg-yellow-500 text-white" :
-                            index === 1 ? "bg-gray-400 text-white" :
-                            index === 2 ? "bg-orange-600 text-white" :
-                            "bg-[#9B1B30] text-white"
-                          }`}>
-                            {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `#${index + 1}`}
+                          <div className="h-10 w-10 rounded-full bg-[#9B1B30] text-white flex items-center justify-center">
+                            <User className="h-5 w-5" />
                           </div>
                           <div>
-                            <h3 className="font-semibold flex items-center gap-2">
+                            <h3 className="font-semibold">
                               {tutor.user?.firstName} {tutor.user?.lastName}
-                              {tutorRankingTab === "overall" && (
-                                <Badge variant="outline" className="bg-purple-100">
-                                  Score: {tutor.overallScore.toFixed(1)}
-                                </Badge>
-                              )}
                             </h3>
                             <p className="text-sm text-muted-foreground">
                               {tutor.user?.email}
@@ -1594,47 +1638,6 @@ export default function AdminDashboard() {
                               ⏳ Pending
                             </Badge>
                           )}
-                        </div>
-                      </div>
-
-                      {/* Statistics Grid */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 p-3 bg-muted/50 rounded-lg">
-                        <div className="text-center">
-                          <div className="flex items-center justify-center gap-1 mb-1">
-                            <CheckCircle className="h-4 w-4 text-yellow-600" />
-                            <p className="text-xs font-medium text-muted-foreground">Rating</p>
-                          </div>
-                          <p className="text-lg font-bold">
-                            {tutor.stats?.averageRating?.toFixed(1) || "0.0"}
-                            <span className="text-xs text-muted-foreground">/5</span>
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            ({tutor.stats?.reviewCount || 0} reviews)
-                          </p>
-                        </div>
-                        <div className="text-center">
-                          <div className="flex items-center justify-center gap-1 mb-1">
-                            <BookOpen className="h-4 w-4 text-blue-600" />
-                            <p className="text-xs font-medium text-muted-foreground">Sessions</p>
-                          </div>
-                          <p className="text-lg font-bold">{tutor.stats?.completedSessions || 0}</p>
-                          <p className="text-xs text-muted-foreground">completed</p>
-                        </div>
-                        <div className="text-center">
-                          <div className="flex items-center justify-center gap-1 mb-1">
-                            <Activity className="h-4 w-4 text-green-600" />
-                            <p className="text-xs font-medium text-muted-foreground">Completion</p>
-                          </div>
-                          <p className="text-lg font-bold">{tutor.stats?.completionRate?.toFixed(0) || 0}%</p>
-                          <p className="text-xs text-muted-foreground">success rate</p>
-                        </div>
-                        <div className="text-center">
-                          <div className="flex items-center justify-center gap-1 mb-1">
-                            <DollarSign className="h-4 w-4 text-[#9B1B30]" />
-                            <p className="text-xs font-medium text-muted-foreground">Revenue</p>
-                          </div>
-                          <p className="text-lg font-bold">{formatMoney(tutor.stats?.totalRevenue || 0)}</p>
-                          <p className="text-xs text-muted-foreground">earned</p>
                         </div>
                       </div>
 
