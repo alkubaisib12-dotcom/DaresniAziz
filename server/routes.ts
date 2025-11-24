@@ -8,7 +8,7 @@ import type * as FirebaseFirestore from "@google-cloud/firestore";
 
 import { requireUser, requireAdmin, type AuthUser, fdb } from "./firebase-admin";
 import { z } from "zod";
-import { sendToAdmins, createTutorRegistrationEmail } from "./email";
+import { sendToAdmins, createTutorRegistrationEmail, getEmailServiceStatus } from "./email";
 import { TutorRankingService } from "./services/tutorRanking";
 
 const chooseRoleSchema = z.object({
@@ -357,7 +357,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/health", async (_req, res) => {
-    res.json({ status: "ok", message: "Server is running" });
+    const emailStatus = getEmailServiceStatus();
+    res.json({
+      status: "ok",
+      message: "Server is running",
+      firebaseConfigured: !!fdb,
+      email: emailStatus,
+      timestamp: new Date().toISOString(),
+      uptimeMs: Math.round(process.uptime() * 1000),
+    });
   });
 
   app.get("/api/stats", async (_req, res) => {
@@ -1021,6 +1029,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting admin user:", error);
       res.status(500).json({ message: "Failed to delete admin user", fieldErrors: {} });
+    }
+  });
+
+  app.get("/api/admin/messages", requireUser, requireAdmin, async (req, res) => {
+    try {
+      const { studentId, tutorId } = adminMessagesQuerySchema.parse(req.query);
+
+      if (!studentId && !tutorId) {
+        return res.status(400).json({ message: "studentId or tutorId is required", fieldErrors: {} });
+      }
+
+      const whereClauses: Array<[string, FirebaseFirestore.WhereFilterOp, any]> = [];
+      if (studentId) whereClauses.push(["studentId", "==", studentId]);
+      if (tutorId) whereClauses.push(["tutorId", "==", tutorId]);
+
+      const rawMessages = await listCollection<any>("messages", whereClauses);
+      rawMessages.sort((a, b) => coerceMillis(a.createdAt) - coerceMillis(b.createdAt));
+
+      const userIds = new Set<string>();
+      for (const msg of rawMessages) {
+        if (msg.senderId) userIds.add(msg.senderId);
+        if (msg.receiverId) userIds.add(msg.receiverId);
+        if (msg.studentId) userIds.add(msg.studentId);
+        if (msg.tutorId) userIds.add(msg.tutorId);
+      }
+
+      const users = await batchLoadMap<any>("users", Array.from(userIds));
+
+      const messages = rawMessages.map((m) => ({
+        id: m.id,
+        senderId: m.senderId,
+        receiverId: m.receiverId,
+        studentId: m.studentId,
+        tutorId: m.tutorId,
+        conversationKey: `${m.studentId || "unknown"}_${m.tutorId || "unknown"}`,
+        content: m.content,
+        read: !!m.read,
+        createdAt: new Date(coerceMillis(m.createdAt)).toISOString(),
+        sender: users.get(m.senderId) || null,
+        receiver: users.get(m.receiverId) || null,
+        student: users.get(m.studentId) || null,
+        tutor: users.get(m.tutorId) || null,
+      }));
+
+      res.json({ messages });
+    } catch (error) {
+      console.error("Error fetching admin chat history:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid query", fieldErrors: error.flatten().fieldErrors });
+      }
+      res.status(500).json({ message: "Failed to fetch messages", fieldErrors: {} });
     }
   });
 
@@ -2123,6 +2182,11 @@ app.get("/api/tutors/:id", async (req, res) => {
   const createMessageSchema = z.object({
     receiverId: z.string(),
     content: z.string().min(1),
+  });
+
+  const adminMessagesQuerySchema = z.object({
+    studentId: z.string().optional(),
+    tutorId: z.string().optional(),
   });
 
   function isStudentTutorPair(me: AuthUser, other: { id: string; role?: string | null } | null) {
