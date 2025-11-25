@@ -150,6 +150,14 @@ export default function TutorBrowse() {
     const term = searchTerm.trim().toLowerCase();
 
     const base = tutors.filter((tutor) => {
+      // Filter out tutors with no valid pricing
+      const hasValidPricing = tutor.hourlyRate > 0 ||
+        (tutor.subjectPricing && Object.values(tutor.subjectPricing).some(price => price > 0));
+
+      if (!hasValidPricing) {
+        return false; // Hide tutors with no pricing set
+      }
+
       const subjectArr = (tutor.subjects ?? []) as any[];
 
       const matchesSearch =

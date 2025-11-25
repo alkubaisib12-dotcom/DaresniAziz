@@ -471,6 +471,46 @@ export default function TutorDashboard() {
           <p className="text-muted-foreground mt-2">Manage your tutoring sessions and students</p>
         </div>
 
+        {/* Profile Incomplete Warning */}
+        {tutorProfile && (() => {
+          const hasValidPricing = tutorProfile.hourlyRate > 0 ||
+            (tutorProfile.subjectPricing && Object.values(tutorProfile.subjectPricing).some(price => price > 0));
+
+          if (!hasValidPricing) {
+            return (
+              <Card className="mb-6 border-red-500 bg-red-50">
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="bg-red-500 text-white rounded-full p-2 mt-1">
+                      <AlertCircle className="h-5 w-5" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-red-900 text-lg mb-2">
+                        Your Profile is Hidden from Public View
+                      </h3>
+                      <p className="text-red-800 mb-3">
+                        Your profile will not appear on the public tutors page until you fix the following issues:
+                      </p>
+                      <ul className="list-disc list-inside space-y-1 text-red-800 mb-4">
+                        <li className="font-medium">
+                          <strong>Pricing not set:</strong> You must set your hourly rate or subject-specific pricing.
+                        </li>
+                      </ul>
+                      <Button
+                        onClick={() => navigate("/profile-settings")}
+                        className="bg-red-600 hover:bg-red-700 text-white"
+                      >
+                        Fix Profile Issues
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          }
+          return null;
+        })()}
+
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-8">
