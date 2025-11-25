@@ -380,7 +380,7 @@ export default function AdminDashboard() {
   // Fetch all tutors
   const { data: allTutors = [], isLoading: tutorsLoading } = useQuery<TutorProfile[]>({
     queryKey: ["/api/admin/tutors"],
-    enabled: isAdmin && (currentTab === "tutors" || currentTab === "pending"),
+    enabled: isAdmin && (currentTab === "tutors" || currentTab === "pending" || currentTab === "leaderboard"),
   });
 
   // Fetch pending tutors
@@ -1171,7 +1171,6 @@ export default function AdminDashboard() {
               {tutorsLoading || allTutors.length === 0 ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#9B1B30]" />
-                  <p className="text-sm text-muted-foreground mt-4">Loading tutor rankings...</p>
                 </div>
               ) : rankedTutors.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
