@@ -131,7 +131,7 @@ export default function ProfileSettings() {
 
   // Initialize selected subjects when tutor subjects load
   useEffect(() => {
-    if (tutorSubjects) {
+    if (tutorSubjects && Array.isArray(tutorSubjects) && tutorSubjects.length > 0) {
       setSelectedSubjects(tutorSubjects.map((s: any) => s.id));
     }
   }, [tutorSubjects]);
@@ -658,7 +658,9 @@ export default function ProfileSettings() {
                         <p className="text-sm text-muted-foreground">No subjects selected yet</p>
                       ) : (
                         selectedSubjects.map((subjectId) => {
-                          const subject = allSubjects.find((s: any) => s.id === subjectId);
+                          const subject = Array.isArray(allSubjects)
+                            ? allSubjects.find((s: any) => s.id === subjectId)
+                            : null;
                           return (
                             <Badge key={subjectId} variant="secondary" className="flex items-center gap-1">
                               {subject?.name || subjectId}
@@ -685,7 +687,7 @@ export default function ProfileSettings() {
                           <SelectValue placeholder="Select a subject to add" />
                         </SelectTrigger>
                         <SelectContent>
-                          {allSubjects
+                          {Array.isArray(allSubjects) && allSubjects
                             .filter((s: any) => !selectedSubjects.includes(s.id))
                             .map((subject: any) => (
                               <SelectItem key={subject.id} value={subject.id}>
