@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
@@ -13,7 +14,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import { Loader2, Upload, User, Clock, AlertCircle } from "lucide-react";
+import { Loader2, Upload, User, Clock, AlertCircle, DollarSign, BookOpen, Plus, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const profileSchema = z.object({
   firstName: z.string().min(1, "First name is required"),
@@ -21,7 +24,16 @@ const profileSchema = z.object({
   profileImageUrl: z.string().optional().or(z.literal("")),
 });
 
+const tutorProfileSchema = z.object({
+  bio: z.string().min(10, "Bio must be at least 10 characters"),
+  phone: z.string().min(1, "Phone number is required"),
+  hourlyRate: z.number().min(1, "Hourly rate must be at least 1"),
+  experience: z.string().min(1, "Experience is required"),
+  education: z.string().min(1, "Education is required"),
+});
+
 type ProfileFormData = z.infer<typeof profileSchema>;
+type TutorProfileFormData = z.infer<typeof tutorProfileSchema>;
 
 export default function ProfileSettings() {
   const { user, refreshUserData } = useAuth();
@@ -29,6 +41,25 @@ export default function ProfileSettings() {
   const queryClient = useQueryClient();
   const [isUploading, setIsUploading] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(user?.profileImageUrl || null);
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
+
+  // Fetch tutor profile if user is a tutor
+  const { data: tutorProfile, isLoading: tutorProfileLoading } = useQuery({
+    queryKey: ["/api/tutors/profile"],
+    enabled: user?.role === "tutor",
+  });
+
+  // Fetch all subjects for subject selection
+  const { data: allSubjects = [] } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["/api/subjects"],
+    enabled: user?.role === "tutor",
+  });
+
+  // Fetch tutor's current subjects
+  const { data: tutorSubjects = [] } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["/api/tutors/profile/subjects"],
+    enabled: user?.role === "tutor",
+  });
 
   // Check if user can change name (7-day limit)
   const canChangeName = useMemo(() => {
@@ -60,6 +91,17 @@ export default function ProfileSettings() {
     },
   });
 
+  const tutorForm = useForm<TutorProfileFormData>({
+    resolver: zodResolver(tutorProfileSchema),
+    defaultValues: {
+      bio: "",
+      phone: "",
+      hourlyRate: 0,
+      experience: "",
+      education: "",
+    },
+  });
+
   // Reset form when user data changes (after successful update)
   useEffect(() => {
     if (user) {
@@ -72,6 +114,27 @@ export default function ProfileSettings() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Reset tutor form when tutor profile data changes
+  useEffect(() => {
+    if (tutorProfile) {
+      tutorForm.reset({
+        bio: tutorProfile.bio || "",
+        phone: tutorProfile.phone || "",
+        hourlyRate: tutorProfile.hourlyRate || 0,
+        experience: tutorProfile.experience || "",
+        education: tutorProfile.education || "",
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tutorProfile]);
+
+  // Initialize selected subjects when tutor subjects load
+  useEffect(() => {
+    if (tutorSubjects) {
+      setSelectedSubjects(tutorSubjects.map((s: any) => s.id));
+    }
+  }, [tutorSubjects]);
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: ProfileFormData) => {
@@ -93,6 +156,54 @@ export default function ProfileSettings() {
       toast({
         title: "Error",
         description: error.message || "Failed to update profile",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateTutorProfileMutation = useMutation({
+    mutationFn: async (data: TutorProfileFormData) => {
+      return await apiRequest("/api/tutors/profile", {
+        method: "PUT",
+        body: JSON.stringify(data),
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tutors/profile"] });
+      toast({
+        title: "Success!",
+        description: "Your tutor profile has been updated.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update tutor profile",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateSubjectsMutation = useMutation({
+    mutationFn: async (subjectIds: string[]) => {
+      return await apiRequest("/api/tutors/profile/subjects", {
+        method: "PUT",
+        body: JSON.stringify({ subjectIds }),
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tutors/profile/subjects"] });
+      toast({
+        title: "Success!",
+        description: "Your subjects have been updated.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update subjects",
         variant: "destructive",
       });
     },
@@ -176,6 +287,24 @@ export default function ProfileSettings() {
     }
 
     updateProfileMutation.mutate(data);
+  };
+
+  const onTutorProfileSubmit = (data: TutorProfileFormData) => {
+    updateTutorProfileMutation.mutate(data);
+  };
+
+  const handleAddSubject = (subjectId: string) => {
+    if (!selectedSubjects.includes(subjectId)) {
+      const newSubjects = [...selectedSubjects, subjectId];
+      setSelectedSubjects(newSubjects);
+      updateSubjectsMutation.mutate(newSubjects);
+    }
+  };
+
+  const handleRemoveSubject = (subjectId: string) => {
+    const newSubjects = selectedSubjects.filter((id) => id !== subjectId);
+    setSelectedSubjects(newSubjects);
+    updateSubjectsMutation.mutate(newSubjects);
   };
 
   if (!user) {
@@ -362,6 +491,226 @@ export default function ProfileSettings() {
             </Form>
           </CardContent>
         </Card>
+
+        {/* Tutor Profile Section - Only for tutors */}
+        {user.role === "tutor" && (
+          <>
+            {/* Tutor Professional Information */}
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BookOpen className="h-5 w-5" />
+                  Professional Information
+                </CardTitle>
+                <CardDescription>
+                  Update your tutor profile details
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {tutorProfileLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                  </div>
+                ) : (
+                  <Form {...tutorForm}>
+                    <form onSubmit={tutorForm.handleSubmit(onTutorProfileSubmit)} className="space-y-6">
+                      {/* Bio */}
+                      <FormField
+                        control={tutorForm.control}
+                        name="bio"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Bio</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder="Tell students about yourself..."
+                                className="min-h-[100px]"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Write a brief introduction about your teaching experience and approach
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Phone */}
+                      <FormField
+                        control={tutorForm.control}
+                        name="phone"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Phone Number</FormLabel>
+                            <FormControl>
+                              <Input placeholder="+973 XXXX XXXX" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Hourly Rate */}
+                      <FormField
+                        control={tutorForm.control}
+                        name="hourlyRate"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="flex items-center gap-2">
+                              <DollarSign className="h-4 w-4" />
+                              Hourly Rate (BHD)
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                min="1"
+                                step="0.01"
+                                placeholder="10.00"
+                                {...field}
+                                onChange={(e) => field.onChange(parseFloat(e.target.value))}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Set your default hourly rate. Students will see this price.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Experience */}
+                      <FormField
+                        control={tutorForm.control}
+                        name="experience"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Years of Experience</FormLabel>
+                            <FormControl>
+                              <Input placeholder="e.g., 5 years" {...field} />
+                            </FormControl>
+                            <FormDescription>
+                              How long have you been tutoring?
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Education */}
+                      <FormField
+                        control={tutorForm.control}
+                        name="education"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Education</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder="e.g., Bachelor's in Mathematics from..."
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Your educational background and qualifications
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Submit Button */}
+                      <div className="flex justify-end">
+                        <Button
+                          type="submit"
+                          disabled={updateTutorProfileMutation.isPending}
+                        >
+                          {updateTutorProfileMutation.isPending ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Saving...
+                            </>
+                          ) : (
+                            "Save Tutor Profile"
+                          )}
+                        </Button>
+                      </div>
+                    </form>
+                  </Form>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Subjects Section */}
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Subjects You Teach</CardTitle>
+                <CardDescription>
+                  Add or remove subjects from your teaching repertoire
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {/* Current Subjects */}
+                <div className="space-y-4">
+                  <div>
+                    <Label className="mb-2 block">Current Subjects</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedSubjects.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No subjects selected yet</p>
+                      ) : (
+                        selectedSubjects.map((subjectId) => {
+                          const subject = allSubjects.find((s: any) => s.id === subjectId);
+                          return (
+                            <Badge key={subjectId} variant="secondary" className="flex items-center gap-1">
+                              {subject?.name || subjectId}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveSubject(subjectId)}
+                                className="ml-1 hover:bg-destructive hover:text-destructive-foreground rounded-full p-0.5"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Add Subject */}
+                  <div>
+                    <Label className="mb-2 block">Add Subject</Label>
+                    <div className="flex gap-2">
+                      <Select onValueChange={handleAddSubject}>
+                        <SelectTrigger className="flex-1">
+                          <SelectValue placeholder="Select a subject to add" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allSubjects
+                            .filter((s: any) => !selectedSubjects.includes(s.id))
+                            .map((subject: any) => (
+                              <SelectItem key={subject.id} value={subject.id}>
+                                {subject.name}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Select subjects you're qualified to teach
+                    </p>
+                  </div>
+
+                  {updateSubjectsMutation.isPending && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Updating subjects...</span>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
     </div>
   );
