@@ -1,5 +1,6 @@
 // client/src/components/SessionCard.tsx
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +55,7 @@ function normalizeDate(raw: any): Date {
 }
 
 export function SessionCard({ session, userRole, onChat, onAction }: SessionCardProps) {
+  const navigate = useNavigate();
   const [showSummaryDialog, setShowSummaryDialog] = useState(false);
   const [showFullDetails, setShowFullDetails] = useState(false);
 
@@ -347,39 +349,16 @@ export function SessionCard({ session, userRole, onChat, onAction }: SessionCard
               <i className="fas fa-comment" />
             </Button>
 
-            {/* Calendar download for scheduled and upcoming sessions */}
-            {(status === "scheduled" || status === "in_progress") && isUpcoming && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  try {
-                    const response = await fetch(`/api/sessions/${session.id}/calendar.ics`, {
-                      credentials: 'include',
-                    });
-                    if (!response.ok) {
-                      console.error('Failed to download calendar file');
-                      return;
-                    }
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `session-${session.id}.ics`;
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                  } catch (error) {
-                    console.error('Error downloading calendar file:', error);
-                  }
-                }}
-                data-testid="button-add-to-calendar"
-                title="Add to Calendar"
-              >
-                <i className="fas fa-calendar-plus" />
-              </Button>
-            )}
+            {/* Calendar view for all sessions */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/calendar')}
+              data-testid="button-view-calendar"
+              title="View Calendar"
+            >
+              <i className="fas fa-calendar" />
+            </Button>
 
             {/* AI Summary button for tutors on completed sessions */}
             {userRole === "tutor" && status === "completed" && (

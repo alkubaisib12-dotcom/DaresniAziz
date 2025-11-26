@@ -119,6 +119,44 @@ export default function CalendarPage() {
     setSelectedEvent(event);
   };
 
+  // Day prop getter - highlight days with sessions
+  const dayPropGetter = (date: Date) => {
+    const dateStr = moment(date).format("YYYY-MM-DD");
+
+    // Find all sessions on this day
+    const sessionsOnDay = events.filter((event) => {
+      const eventDateStr = moment(event.start).format("YYYY-MM-DD");
+      return eventDateStr === dateStr;
+    });
+
+    if (sessionsOnDay.length === 0) {
+      return {};
+    }
+
+    // Check if there are any upcoming sessions (scheduled or in_progress)
+    const hasUpcoming = sessionsOnDay.some(
+      (event) => event.status === "scheduled" || event.status === "in_progress"
+    );
+
+    // Check if there are completed sessions
+    const hasCompleted = sessionsOnDay.some((event) => event.status === "completed");
+
+    // Priority: upcoming sessions (blue) > completed sessions (green)
+    let backgroundColor = "";
+    if (hasUpcoming) {
+      backgroundColor = "#dbeafe"; // light blue
+    } else if (hasCompleted) {
+      backgroundColor = "#d1fae5"; // light green
+    }
+
+    return {
+      style: {
+        backgroundColor,
+        fontWeight: "bold",
+      },
+    };
+  };
+
   const priceValue =
     selectedEvent?.resource.priceCents != null
       ? Number(selectedEvent.resource.priceCents) / 100
@@ -178,6 +216,7 @@ export default function CalendarPage() {
               style={{ height: "100%" }}
               onSelectEvent={handleSelectEvent}
               eventPropGetter={eventStyleGetter}
+              dayPropGetter={dayPropGetter}
               views={["month", "week", "day", "agenda"]}
               defaultView="month"
               popup
