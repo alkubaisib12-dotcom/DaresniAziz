@@ -17,6 +17,65 @@ export interface ReminderStatus {
 }
 
 /**
+ * Auto-complete sessions that have passed their end time
+ */
+export async function autoCompleteOverdueSessions(): Promise<number> {
+  if (!fdb) {
+    console.warn("Firebase not initialized, skipping auto-completion");
+    return 0;
+  }
+
+  let completedCount = 0;
+
+  try {
+    const now = new Date();
+
+    // Get all scheduled sessions
+    const sessionsSnap = await fdb
+      .collection("tutoring_sessions")
+      .where("status", "==", "scheduled")
+      .get();
+
+    const sessions = sessionsSnap.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    for (const session of sessions) {
+      const scheduledAt = toDate(session.scheduledAt);
+      if (!scheduledAt) continue;
+
+      // Calculate end time (scheduled time + duration)
+      const duration = session.duration || 60; // default 60 minutes
+      const endTime = new Date(scheduledAt.getTime() + duration * 60 * 1000);
+
+      // If session end time has passed, mark as completed
+      if (endTime < now) {
+        await fdb
+          .collection("tutoring_sessions")
+          .doc(session.id)
+          .update({
+            status: "completed",
+            updatedAt: new Date(),
+          });
+
+        completedCount++;
+        console.log(`Auto-completed session ${session.id} (ended at ${endTime.toISOString()})`);
+      }
+    }
+
+    if (completedCount > 0) {
+      console.log(`Auto-completed ${completedCount} overdue sessions`);
+    }
+
+    return completedCount;
+  } catch (error) {
+    console.error("Error auto-completing overdue sessions:", error);
+    return completedCount;
+  }
+}
+
+/**
  * Check and send session reminders
  * This function should be called by a cron job every 5-10 minutes
  */
@@ -24,10 +83,11 @@ export async function processSessionReminders(): Promise<{
   processed: number;
   sent: number;
   errors: number;
+  autoCompleted: number;
 }> {
   if (!fdb) {
     console.warn("Firebase not initialized, skipping reminder processing");
-    return { processed: 0, sent: 0, errors: 0 };
+    return { processed: 0, sent: 0, errors: 0, autoCompleted: 0 };
   }
 
   let processed = 0;
@@ -35,6 +95,9 @@ export async function processSessionReminders(): Promise<{
   let errors = 0;
 
   try {
+    // First, auto-complete any overdue sessions
+    const autoCompleted = await autoCompleteOverdueSessions();
+
     const now = new Date();
 
     // Get all scheduled sessions in the next 25 hours
@@ -127,11 +190,11 @@ export async function processSessionReminders(): Promise<{
       }
     }
 
-    console.log(`Reminder processing complete: ${processed} processed, ${sent} sent, ${errors} errors`);
-    return { processed, sent, errors };
+    console.log(`Reminder processing complete: ${processed} processed, ${sent} sent, ${errors} errors, ${autoCompleted} auto-completed`);
+    return { processed, sent, errors, autoCompleted };
   } catch (error) {
     console.error("Error in processSessionReminders:", error);
-    return { processed, sent, errors };
+    return { processed, sent, errors, autoCompleted: 0 };
   }
 }
 

@@ -28,7 +28,7 @@ export function startReminderScheduler(): void {
       console.log("Running scheduled reminder check...");
       const result = await processSessionReminders();
       console.log(
-        `Reminder check complete: ${result.processed} processed, ${result.sent} sent, ${result.errors} errors`
+        `Reminder check complete: ${result.processed} processed, ${result.sent} sent, ${result.errors} errors, ${result.autoCompleted} auto-completed`
       );
     } catch (error) {
       console.error("Error in scheduled reminder processing:", error);
