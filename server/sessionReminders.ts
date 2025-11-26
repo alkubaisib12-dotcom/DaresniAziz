@@ -7,6 +7,7 @@ import {
   createSession15MinReminderEmail,
   createSessionCancellationEmail,
 } from "./email";
+import { generateICS, createCalendarEventFromSession } from "./calendarUtils";
 
 export interface ReminderStatus {
   reminder24h: boolean;
@@ -278,6 +279,30 @@ async function sendSessionReminder(
       }
     }
 
+    // Generate calendar invite (.ics file) for 24h and 1h reminders
+    let calendarAttachment;
+    if (type === "24h" || type === "1h") {
+      try {
+        const eventData = createCalendarEventFromSession(
+          session,
+          studentName,
+          tutorName,
+          subject.name,
+          student.email,
+          tutorUser.email
+        );
+        const icsContent = generateICS(eventData);
+
+        calendarAttachment = {
+          filename: "session-invite.ics",
+          content: icsContent,
+          contentType: "text/calendar; method=REQUEST",
+        };
+      } catch (error) {
+        console.error(`Error generating calendar invite for session ${session.id}:`, error);
+      }
+    }
+
     // Send all emails
     for (const email of emails) {
       try {
@@ -286,6 +311,7 @@ async function sendSessionReminder(
           subject: email.template.subject,
           html: email.template.html,
           text: email.template.text,
+          attachments: calendarAttachment ? [calendarAttachment] : undefined,
         });
       } catch (error) {
         console.error(`Failed to send ${type} reminder to ${email.to}:`, error);

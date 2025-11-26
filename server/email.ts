@@ -72,6 +72,11 @@ export interface EmailOptions {
   subject: string;
   html: string;
   text?: string;
+  attachments?: Array<{
+    filename: string;
+    content: string | Buffer;
+    contentType?: string;
+  }>;
 }
 
 // -------------------------------
@@ -85,25 +90,46 @@ export async function sendEmail(options: EmailOptions): Promise<void> {
   try {
     if (emailService === "resend" && resendClient) {
       const fromEmail = process.env.RESEND_FROM || "Daresni <noreply@example.com>";
-      // Resend supports single or multiple recipients; sending one-by-one is fine:
+      // Resend supports attachments
       for (const to of options.to) {
-        await resendClient.emails.send({
+        const emailData: any = {
           from: fromEmail,
           to,
           subject: options.subject,
           html: options.html,
           text: options.text,
-        });
+        };
+
+        // Add attachments if present
+        if (options.attachments && options.attachments.length > 0) {
+          emailData.attachments = options.attachments.map(att => ({
+            filename: att.filename,
+            content: att.content,
+          }));
+        }
+
+        await resendClient.emails.send(emailData);
       }
     } else if (emailService === "smtp" && smtpTransporter) {
       const fromEmail = process.env.SMTP_FROM || "Daresni <noreply@example.com>";
-      await smtpTransporter.sendMail({
+      const mailOptions: any = {
         from: fromEmail,
         to: options.to.join(", "),
         subject: options.subject,
         html: options.html,
         text: options.text,
-      });
+      };
+
+      // Add attachments if present
+      if (options.attachments && options.attachments.length > 0) {
+        mailOptions.attachments = options.attachments.map(att => ({
+          filename: att.filename,
+          content: att.content,
+          contentType: att.contentType || 'text/calendar',
+        }));
+      }
+
+      await smtpTransporter.sendMail(mailOptions);
     }
 
     console.log(`Email sent successfully to ${options.to.length} recipient(s): ${options.subject}`);
