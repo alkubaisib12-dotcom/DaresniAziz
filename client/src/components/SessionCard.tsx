@@ -347,6 +347,21 @@ export function SessionCard({ session, userRole, onChat, onAction }: SessionCard
               <i className="fas fa-comment" />
             </Button>
 
+            {/* Calendar download for scheduled and upcoming sessions */}
+            {(status === "scheduled" || status === "in_progress") && isUpcoming && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  window.open(`/api/sessions/${session.id}/calendar.ics`, "_blank");
+                }}
+                data-testid="button-add-to-calendar"
+                title="Add to Calendar"
+              >
+                <i className="fas fa-calendar-plus" />
+              </Button>
+            )}
+
             {/* AI Summary button for tutors on completed sessions */}
             {userRole === "tutor" && status === "completed" && (
               <Button

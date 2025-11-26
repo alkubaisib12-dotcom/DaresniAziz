@@ -103,6 +103,17 @@ export interface SessionDoc {
     generatedAt?: Date;        // When the summary was generated
   };
 
+  // Session Reminder & Confirmation fields
+  reminderStatus?: {
+    reminder24h: boolean;     // 24-hour reminder sent
+    reminder1h: boolean;      // 1-hour reminder sent
+    reminder15min: boolean;   // 15-minute reminder sent
+    lastChecked?: Date;       // Last time reminders were checked
+  };
+  studentConfirmed?: boolean; // Whether student confirmed attendance
+  cancellationReason?: string; // Reason for cancellation (if cancelled)
+  cancelledAt?: Date;         // When session was cancelled
+
   createdAt?: Date;
   updatedAt?: Date;
 }

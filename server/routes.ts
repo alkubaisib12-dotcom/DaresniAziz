@@ -3115,6 +3115,164 @@ I'm here to help you understand the concepts better and practice! Feel free to a
     }
   });
 
+  // === SESSION CALENDAR & REMINDERS ===
+
+  // Download .ics calendar file for a session
+  app.get("/api/sessions/:id/calendar.ics", requireUser, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const user = req.user!;
+
+      const sessionSnap = await fdb!.collection("tutoring_sessions").doc(id).get();
+      if (!sessionSnap.exists) {
+        return res.status(404).json({ message: "Session not found", fieldErrors: {} });
+      }
+
+      const session = { id: sessionSnap.id, ...sessionSnap.data() };
+
+      // Check if user has access to this session
+      const tutorProfileSnap = session.tutorId
+        ? await fdb!.collection("tutor_profiles").doc(session.tutorId).get()
+        : null;
+      const tutorProfile = tutorProfileSnap?.exists ? tutorProfileSnap.data() : null;
+
+      const isStudent = session.studentId === user.id;
+      const isTutor = tutorProfile?.userId === user.id;
+      const isAdmin = user.role === "admin";
+
+      if (!isStudent && !isTutor && !isAdmin) {
+        return res.status(403).json({ message: "Access denied", fieldErrors: {} });
+      }
+
+      // Fetch related data
+      const [studentSnap, subjectSnap] = await Promise.all([
+        fdb!.collection("users").doc(session.studentId).get(),
+        fdb!.collection("subjects").doc(session.subjectId).get(),
+      ]);
+
+      const student = studentSnap.exists ? studentSnap.data() : null;
+      const subject = subjectSnap.exists ? subjectSnap.data() : null;
+
+      // Get tutor user data
+      let tutorUser = null;
+      if (tutorProfile?.userId) {
+        const tutorUserSnap = await fdb!.collection("users").doc(tutorProfile.userId).get();
+        tutorUser = tutorUserSnap.exists ? tutorUserSnap.data() : null;
+      }
+
+      if (!student || !tutorUser || !subject) {
+        return res.status(400).json({ message: "Missing session data", fieldErrors: {} });
+      }
+
+      const studentName = `${student.firstName || ""} ${student.lastName || ""}`.trim() || "Student";
+      const tutorName = `${tutorUser.firstName || ""} ${tutorUser.lastName || ""}`.trim() || "Tutor";
+
+      // Generate calendar event
+      const { generateICS, createCalendarEventFromSession } = await import("./calendarUtils");
+      const eventData = createCalendarEventFromSession(
+        session,
+        studentName,
+        tutorName,
+        subject.name,
+        student.email,
+        tutorUser.email
+      );
+
+      const icsContent = generateICS(eventData);
+
+      // Set headers for file download
+      res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="session-${id}.ics"`);
+      res.send(icsContent);
+    } catch (error) {
+      console.error("Error generating calendar file:", error);
+      res.status(500).json({ message: "Failed to generate calendar file", fieldErrors: {} });
+    }
+  });
+
+  // Get Google Calendar add event URL
+  app.get("/api/sessions/:id/google-calendar-url", requireUser, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const user = req.user!;
+
+      const sessionSnap = await fdb!.collection("tutoring_sessions").doc(id).get();
+      if (!sessionSnap.exists) {
+        return res.status(404).json({ message: "Session not found", fieldErrors: {} });
+      }
+
+      const session = { id: sessionSnap.id, ...sessionSnap.data() };
+
+      // Check if user has access to this session
+      const tutorProfileSnap = session.tutorId
+        ? await fdb!.collection("tutor_profiles").doc(session.tutorId).get()
+        : null;
+      const tutorProfile = tutorProfileSnap?.exists ? tutorProfileSnap.data() : null;
+
+      const isStudent = session.studentId === user.id;
+      const isTutor = tutorProfile?.userId === user.id;
+      const isAdmin = user.role === "admin";
+
+      if (!isStudent && !isTutor && !isAdmin) {
+        return res.status(403).json({ message: "Access denied", fieldErrors: {} });
+      }
+
+      // Fetch related data
+      const [studentSnap, subjectSnap] = await Promise.all([
+        fdb!.collection("users").doc(session.studentId).get(),
+        fdb!.collection("subjects").doc(session.subjectId).get(),
+      ]);
+
+      const student = studentSnap.exists ? studentSnap.data() : null;
+      const subject = subjectSnap.exists ? subjectSnap.data() : null;
+
+      let tutorUser = null;
+      if (tutorProfile?.userId) {
+        const tutorUserSnap = await fdb!.collection("users").doc(tutorProfile.userId).get();
+        tutorUser = tutorUserSnap.exists ? tutorUserSnap.data() : null;
+      }
+
+      if (!student || !tutorUser || !subject) {
+        return res.status(400).json({ message: "Missing session data", fieldErrors: {} });
+      }
+
+      const studentName = `${student.firstName || ""} ${student.lastName || ""}`.trim() || "Student";
+      const tutorName = `${tutorUser.firstName || ""} ${tutorUser.lastName || ""}`.trim() || "Tutor";
+
+      // Generate Google Calendar URL
+      const { generateGoogleCalendarURL, createCalendarEventFromSession } = await import("./calendarUtils");
+      const eventData = createCalendarEventFromSession(
+        session,
+        studentName,
+        tutorName,
+        subject.name,
+        student.email,
+        tutorUser.email
+      );
+
+      const googleCalendarURL = generateGoogleCalendarURL(eventData);
+      res.json({ url: googleCalendarURL });
+    } catch (error) {
+      console.error("Error generating Google Calendar URL:", error);
+      res.status(500).json({ message: "Failed to generate Google Calendar URL", fieldErrors: {} });
+    }
+  });
+
+  // Manual trigger for sending reminders (admin only, for testing)
+  app.post("/api/admin/send-reminders", requireUser, requireAdmin, async (req, res) => {
+    try {
+      const { processSessionReminders } = await import("./sessionReminders");
+      const result = await processSessionReminders();
+      res.json({
+        message: "Reminder processing completed",
+        ...result,
+      });
+    } catch (error) {
+      console.error("Error processing reminders:", error);
+      res.status(500).json({ message: "Failed to process reminders", fieldErrors: {} });
+    }
+  });
+
   // === REVIEWS ===
   app.get("/api/reviews/:tutorId", async (req, res) => {
     try {
