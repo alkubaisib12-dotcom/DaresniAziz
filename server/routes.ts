@@ -1529,8 +1529,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/tutors", requireUser, requireAdmin, async (_req, res) => {
+  app.get("/api/admin/tutors", requireUser, requireAdmin, async (req, res) => {
     try {
+      // Get date range from query params
+      const fromDate = req.query.fromDate ? new Date(req.query.fromDate as string) : null;
+      const toDate = req.query.toDate ? new Date(req.query.toDate as string) : null;
+
       const profs = await listCollection<any>("tutor_profiles");
       const userIds = profs.map((p) => p.userId).filter(Boolean);
       const tutorProfileIds = profs.map((p) => p.id);
@@ -1539,11 +1543,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Fetch all sessions for all tutors
       const allSessionsSnap = await fdb!.collection("tutoring_sessions").get();
-      const allSessions = allSessionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      let allSessions = allSessionsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Filter sessions by date range if provided
+      if (fromDate || toDate) {
+        allSessions = allSessions.filter((s: any) => {
+          if (!s.scheduledAt) return false;
+
+          let sessionDate: Date;
+          if (s.scheduledAt.toDate && typeof s.scheduledAt.toDate === 'function') {
+            sessionDate = s.scheduledAt.toDate();
+          } else if (s.scheduledAt._seconds) {
+            sessionDate = new Date(s.scheduledAt._seconds * 1000);
+          } else {
+            sessionDate = new Date(s.scheduledAt);
+          }
+
+          if (fromDate && sessionDate < fromDate) return false;
+          if (toDate && sessionDate > toDate) return false;
+          return true;
+        });
+      }
 
       // Fetch all reviews
       const allReviewsSnap = await fdb!.collection("reviews").get();
-      const allReviews = allReviewsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      let allReviews = allReviewsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // Filter reviews by date range if provided (based on createdAt)
+      if (fromDate || toDate) {
+        allReviews = allReviews.filter((r: any) => {
+          if (!r.createdAt) return false;
+
+          let reviewDate: Date;
+          if (r.createdAt.toDate && typeof r.createdAt.toDate === 'function') {
+            reviewDate = r.createdAt.toDate();
+          } else if (r.createdAt._seconds) {
+            reviewDate = new Date(r.createdAt._seconds * 1000);
+          } else {
+            reviewDate = new Date(r.createdAt);
+          }
+
+          if (fromDate && reviewDate < fromDate) return false;
+          if (toDate && reviewDate > toDate) return false;
+          return true;
+        });
+      }
 
       // Calculate statistics for each tutor
       const results = profs.map((p) => {

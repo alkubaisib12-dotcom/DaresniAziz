@@ -379,8 +379,15 @@ export default function AdminDashboard() {
 
   // Fetch all tutors
   const { data: allTutors = [], isLoading: tutorsLoading } = useQuery<TutorProfile[]>({
-    queryKey: ["/api/admin/tutors"],
-    enabled: isAdmin && (currentTab === "tutors" || currentTab === "pending"),
+    queryKey: ["/api/admin/tutors", fromDate?.toISOString(), toDate?.toISOString()],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (fromDate) params.append("fromDate", fromDate.toISOString());
+      if (toDate) params.append("toDate", toDate.toISOString());
+      const url = `/api/admin/tutors${params.toString() ? `?${params.toString()}` : ""}`;
+      return apiRequest(url);
+    },
+    enabled: isAdmin && (currentTab === "tutors" || currentTab === "pending" || currentTab === "analytics"),
   });
 
   // Fetch pending tutors
@@ -597,7 +604,8 @@ export default function AdminDashboard() {
   const filteredNotifications = notifications.filter((n) => isDateInRange(n.createdAt));
   const filteredPendingTutors = pendingTutors.filter((t) => isDateInRange(t.profile.createdAt));
   const filteredStudents = students.filter((s) => isDateInRange(s.createdAt));
-  const filteredAllTutors = allTutors.filter((t) => isDateInRange(t.profile.createdAt));
+  // For tutors, show all tutors but their stats are already filtered by date range via API
+  const filteredAllTutors = allTutors;
   const filteredAdminUsers = adminUsers.filter((a) => isDateInRange(a.createdAt));
 
   // Rank and sort tutors based on selected tab
@@ -1153,7 +1161,7 @@ export default function AdminDashboard() {
                               <div className="flex items-center gap-4 text-xs text-muted-foreground">
                                 <span className="flex items-center gap-1" title={`${stats.reviewCount} reviews`}>
                                   <CheckCircle className="h-3 w-3" />
-                                  {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : "N/A"}/5
+                                  {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : "0"}/5
                                 </span>
                                 <span className="flex items-center gap-1">
                                   <BookOpen className="h-3 w-3" />
@@ -1184,7 +1192,7 @@ export default function AdminDashboard() {
                             )}
                             {tutorRankingTab === "rating" && (
                               <Badge variant="outline" className="bg-yellow-100 font-bold">
-                                {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : "N/A"}⭐
+                                {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : "0"}⭐
                               </Badge>
                             )}
                           </div>
