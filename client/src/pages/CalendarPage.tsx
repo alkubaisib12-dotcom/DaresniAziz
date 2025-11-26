@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatMoney } from "@/lib/currency";
-import { useUser } from "@/hooks/useUser";
+import { useAuth } from "@/components/AuthProvider";
 
 const localizer = momentLocalizer(moment);
 
@@ -53,7 +53,7 @@ interface CalendarEvent {
 }
 
 export default function CalendarPage() {
-  const { user } = useUser();
+  const { user } = useAuth();
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
 
   // Fetch sessions
