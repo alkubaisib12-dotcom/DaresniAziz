@@ -173,12 +173,12 @@ export async function processSessionReminders(): Promise<{
 
         // Update reminder status in Firestore
         if (shouldUpdate) {
+          reminderStatus.lastChecked = new Date();
           await fdb
             .collection("tutoring_sessions")
             .doc(session.id)
             .update({
               reminderStatus,
-              "reminderStatus.lastChecked": new Date(),
             });
 
           sent += emailsSent;

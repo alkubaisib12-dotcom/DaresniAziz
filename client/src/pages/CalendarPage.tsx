@@ -63,23 +63,30 @@ export default function CalendarPage() {
 
   // Convert sessions to calendar events
   const events: CalendarEvent[] = sessions.map((session) => {
-    const scheduledAt = session.scheduledDate || session.scheduledAt;
-    const start = new Date(scheduledAt);
-    const end = new Date(start.getTime() + (session.duration || 60) * 60 * 1000);
+    try {
+      const scheduledAt = session.scheduledDate || session.scheduledAt;
+      const start = new Date(scheduledAt);
+      const end = new Date(start.getTime() + (session.duration || 60) * 60 * 1000);
 
-    const otherPerson = user?.role === "student"
-      ? `${session.tutor?.user.firstName} ${session.tutor?.user.lastName}`
-      : `${session.student?.firstName} ${session.student?.lastName}`;
+      const otherPerson = user?.role === "student"
+        ? `${session.tutor?.user?.firstName || ""} ${session.tutor?.user?.lastName || ""}`.trim() || "Unknown"
+        : `${session.student?.firstName || ""} ${session.student?.lastName || ""}`.trim() || "Unknown";
 
-    return {
-      id: session.id,
-      title: `${session.subject.name} - ${otherPerson}`,
-      start,
-      end,
-      resource: session,
-      status: session.status,
-    };
-  });
+      return {
+        id: session.id,
+        title: `${session.subject?.name || "Session"} - ${otherPerson}`,
+        start,
+        end,
+        resource: session,
+        status: session.status,
+      };
+    } catch (error) {
+      console.error("Error processing session for calendar:", session, error);
+      return null;
+    }
+  }).filter((event): event is CalendarEvent => event !== null);
+
+  console.log("Calendar sessions:", sessions.length, "Calendar events:", events.length);
 
   // Event style getter - color code by status
   const eventStyleGetter = (event: CalendarEvent) => {
