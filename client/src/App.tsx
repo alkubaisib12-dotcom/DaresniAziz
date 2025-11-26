@@ -23,6 +23,7 @@ import ProfileSettings from "@/pages/ProfileSettings";
 import PendingApproval from "@/pages/PendingApproval";
 import NotificationsPage from "@/pages/NotificationsPage";
 import StudentReports from "@/pages/StudentReports";
+import CalendarPage from "@/pages/CalendarPage";
 import Navbar from "@/components/Navbar";
 import TutorEarningsReport from "@/pages/TutorEarningsReport";
 import PreSessionMemoryGame from "@/components/PreSessionMemoryGame";
@@ -198,6 +199,7 @@ export default function App() {
             <Route path="/tutor-earnings" component={TutorEarningsReport} />
             <Route path="/profile-settings" component={ProfileSettings} />
             <Route path="/my-sessions" component={MySessions} />
+            <Route path="/calendar" component={CalendarPage} />
             <Route path="/student-reports" component={StudentReports} />
             <Route path="/notifications" component={NotificationsPage} />
 

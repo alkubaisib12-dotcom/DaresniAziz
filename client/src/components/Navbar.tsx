@@ -293,6 +293,13 @@ export default function Navbar() {
                         My Sessions
                       </DropdownMenuItem>
                       <DropdownMenuItem
+                        onClick={() => navigate("/calendar")}
+                        data-testid="menu-item-calendar"
+                      >
+                        <Calendar className="mr-2 h-4 w-4 text-blue-500" />
+                        Calendar View
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
                         onClick={() => navigate("/student-reports")}
                         data-testid="menu-item-student-reports"
                       >
@@ -370,6 +377,13 @@ export default function Navbar() {
                       >
                         <Calendar className="mr-2 h-4 w-4" />
                         My Sessions
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => navigate("/calendar")}
+                        data-testid="menu-item-calendar"
+                      >
+                        <Calendar className="mr-2 h-4 w-4 text-blue-500" />
+                        Calendar View
                       </DropdownMenuItem>
                     </DropdownMenuGroup>
 
