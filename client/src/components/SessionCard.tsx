@@ -352,8 +352,27 @@ export function SessionCard({ session, userRole, onChat, onAction }: SessionCard
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  window.open(`/api/sessions/${session.id}/calendar.ics`, "_blank");
+                onClick={async () => {
+                  try {
+                    const response = await fetch(`/api/sessions/${session.id}/calendar.ics`, {
+                      credentials: 'include',
+                    });
+                    if (!response.ok) {
+                      console.error('Failed to download calendar file');
+                      return;
+                    }
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `session-${session.id}.ics`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                  } catch (error) {
+                    console.error('Error downloading calendar file:', error);
+                  }
                 }}
                 data-testid="button-add-to-calendar"
                 title="Add to Calendar"
