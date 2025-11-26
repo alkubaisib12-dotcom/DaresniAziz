@@ -1161,7 +1161,7 @@ export default function AdminDashboard() {
                               <div className="flex items-center gap-4 text-xs text-muted-foreground">
                                 <span className="flex items-center gap-1" title={`${stats.reviewCount} reviews`}>
                                   <CheckCircle className="h-3 w-3" />
-                                  {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : "0"}/5
+                                  {stats.reviewCount > 0 ? stats.averageRating.toFixed(1) : "N/A"}/5
                                 </span>
                                 <span className="flex items-center gap-1">
                                   <BookOpen className="h-3 w-3" />
@@ -1192,7 +1192,7 @@ export default function AdminDashboard() {
                             )}
                             {tutorRankingTab === "rating" && (
                               <Badge variant="outline" className="bg-yellow-100 font-bold">
-                                {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : "0"}⭐
+                                {stats.reviewCount > 0 ? stats.averageRating.toFixed(1) : "N/A"}⭐
                               </Badge>
                             )}
                           </div>

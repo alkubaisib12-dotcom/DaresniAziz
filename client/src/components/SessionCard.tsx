@@ -1,6 +1,6 @@
 // client/src/components/SessionCard.tsx
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -55,7 +55,7 @@ function normalizeDate(raw: any): Date {
 }
 
 export function SessionCard({ session, userRole, onChat, onAction }: SessionCardProps) {
-  const navigate = useNavigate();
+  const [, navigate] = useLocation();
   const [showSummaryDialog, setShowSummaryDialog] = useState(false);
   const [showFullDetails, setShowFullDetails] = useState(false);
 
