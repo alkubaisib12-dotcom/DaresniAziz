@@ -65,7 +65,17 @@ export default function CalendarPage() {
   const events: CalendarEvent[] = sessions.map((session) => {
     try {
       const scheduledAt = session.scheduledDate || session.scheduledAt;
-      const start = new Date(scheduledAt);
+
+      // Handle Firestore Timestamp objects
+      let start: Date;
+      if (scheduledAt && typeof scheduledAt === 'object' && 'toDate' in scheduledAt) {
+        start = (scheduledAt as any).toDate();
+      } else if (scheduledAt && typeof scheduledAt === 'object' && '_seconds' in scheduledAt) {
+        start = new Date((scheduledAt as any)._seconds * 1000);
+      } else {
+        start = new Date(scheduledAt);
+      }
+
       const end = new Date(start.getTime() + (session.duration || 60) * 60 * 1000);
 
       const otherPerson = user?.role === "student"
@@ -191,6 +201,9 @@ export default function CalendarPage() {
               <CardTitle className="text-2xl">My Sessions Calendar</CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
                 View all your tutoring sessions in calendar format
+              </p>
+              <p className="text-xs text-blue-600 mt-1">
+                Debug: {sessions.length} sessions loaded, {events.length} events created
               </p>
             </div>
             <div className="flex gap-4 text-sm">
