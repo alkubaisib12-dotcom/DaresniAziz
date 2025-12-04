@@ -62,9 +62,8 @@ declare global {
   }
 }
 
-// -------------------------------------
-// Middleware: requireUser (verifies ID token, upserts Firestore user)
-// -------------------------------------
+
+// Middleware
 export const requireUser = async (
   req: Request,
   res: Response,
@@ -113,7 +112,7 @@ export const requireUser = async (
       role = (existing.role as any) ?? null;
       profileImageUrl = (existing.profileImageUrl as any) ?? null;
 
-      // Only update email and updatedAt - preserve user's custom firstName/lastName/profileImageUrl
+      // Only update email and updatedAt
       await userRef.set(
         {
           email,
@@ -156,9 +155,7 @@ export const requireUser = async (
   }
 };
 
-// -------------------------------------
 // Middleware: requireAdmin
-// -------------------------------------
 export const requireAdmin = (
   req: Request,
   res: Response,

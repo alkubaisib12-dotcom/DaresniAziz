@@ -532,3 +532,105 @@ Your AI Study Buddy is now fully integrated and ready to help students learn, pr
 - [ ] Confirmed personalization works
 
 Welcome to the future of educational technology! 🚀
+
+
+app.post("/api/sessions/:id/generate-quiz", requireUser, async (req, res) => {
+    try {
+      const user = req.user!;
+      const sessionId = req.params.id;
+
+      const sessionRef = fdb!.collection("tutoring_sessions").doc(sessionId);
+      const sessionSnap = await sessionRef.get();
+      if (!sessionSnap.exists) {
+        return res.status(404).json({ message: "Session not found", fieldErrors: {} });
+      }
+      const session = { id: sessionSnap.id, ...(sessionSnap.data() as any) } as any;
+
+      if (user.role === "tutor") {
+        const profSnap = await fdb!.collection("tutor_profiles").where("userId", "==", user.id).limit(1).get();
+        const tutorProfile = profSnap.empty ? null : ({ id: profSnap.docs[0].id, ...profSnap.docs[0].data() } as any);
+        if (!tutorProfile || session.tutorId !== tutorProfile.id) {
+          return res.status(403).json({ message: "Not authorized to generate quiz for this session", fieldErrors: {} });
+        }
+      } else if (user.role !== "admin") {
+        return res.status(403).json({ message: "Only tutors can generate session quizzes", fieldErrors: {} });
+      }
+
+      if (!session.aiSummary) {
+        return res.status(400).json({ message: "AI summary is required to generate a quiz. Please generate the summary first.", fieldErrors: {} });
+      }
+
+      const { generateSessionQuiz } = await import("./ai-quiz");
+
+      const subjectSnap = await fdb!.collection("subjects").doc(session.subjectId).get();
+      const subject = subjectSnap.exists ? subjectSnap.data()?.name : undefined;
+
+      const studentSnap = await fdb!.collection("users").doc(session.studentId).get();
+      const studentName = studentSnap.exists ? `${studentSnap.data()?.firstName} ${studentSnap.data()?.lastName}` : undefined;
+
+      const quizData = await generateSessionQuiz({
+        aiSummary: session.aiSummary,
+        subject,
+        studentName,
+      });
+
+      // نحفظ الكويز في الفاير بيس
+      const quizRef = fdb!.collection("session_quizzes").doc();
+      await quizRef.set({
+        sessionId,
+        ...quizData,
+        createdAt: now(),
+        aiGenerated: true,
+      });
+
+      await sessionRef.set(
+        {
+          quizId: quizRef.id,
+          updatedAt: now(),
+        },
+        { merge: true }
+      );
+
+      const quiz = await quizRef.get();
+      res.json({ id: quiz.id, ...quiz.data() });
+    } catch (error: any) {
+      console.error("Error generating quiz:", error);
+
+      const msg = String(error?.message ?? "");
+      const isOverloaded =
+        msg.includes("model is overloaded") ||
+        msg.includes("503 Service Unavailable");
+
+      if (isOverloaded) {
+        return res
+          .status(503)
+          .json({
+            message: "AI service is temporarily busy. Please try again in a few seconds.",
+            fieldErrors: {},
+          });
+      }
+
+      if (msg.toLowerCase().includes("api key")) {
+        return res
+          .status(500)
+          .json({
+            message: "AI configuration error. Please contact the administrator.",
+            fieldErrors: {},
+          });
+      }
+
+      if (msg.toLowerCase().includes("quota")) {
+        return res
+          .status(429)
+          .json({
+            message: "AI quota exceeded. Please try again later.",
+            fieldErrors: {},
+          });
+      }
+
+      res.status(500).json({
+        message: msg || "Failed to generate quiz. Please try again.",
+        fieldErrors: {},
+      });
+    }
+  });
