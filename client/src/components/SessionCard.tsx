@@ -66,7 +66,9 @@ export function SessionCard({ session, userRole, onChat, onAction }: SessionCard
   const status = rawStatus.replace("-", "_"); // "in-progress" -> "in_progress"
 
   const now = new Date();
-  const isUpcoming = scheduled > now;
+  // Session is "upcoming" if it hasn't ended yet (includes current sessions)
+  const sessionEnd = new Date(scheduled.getTime() + (session.duration || 60) * 60 * 1000);
+  const isUpcoming = sessionEnd > now;
   const isToday = scheduled.toDateString() === now.toDateString();
 
   const otherUser = userRole === "student" ? session.tutor.user : session.student;

@@ -108,9 +108,19 @@ export default function MySessions() {
 
   const { upcoming, past, cancelled } = useMemo(() => {
     const now = new Date();
-    const up = hydrated.filter((s) => s.status === "scheduled" && s.scheduledAt > now);
+
+    // Session is "upcoming" if it hasn't ended yet (includes current sessions)
+    const up = hydrated.filter((s) => {
+      if (s.status !== "scheduled") return false;
+      const sessionEnd = new Date(s.scheduledAt.getTime() + s.duration * 60 * 1000);
+      return sessionEnd > now; // Include sessions that haven't ended
+    });
+
     const pa = hydrated.filter(
-      (s) => s.status === "completed" || (s.status === "scheduled" && s.scheduledAt <= now)
+      (s) => s.status === "completed" || (s.status === "scheduled" && (() => {
+        const sessionEnd = new Date(s.scheduledAt.getTime() + s.duration * 60 * 1000);
+        return sessionEnd <= now;
+      })())
     );
     const ca = hydrated.filter((s) => s.status === "cancelled");
     return { upcoming: up, past: pa, cancelled: ca };

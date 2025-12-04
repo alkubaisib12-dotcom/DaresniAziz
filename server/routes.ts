@@ -11,6 +11,7 @@ import { z } from "zod";
 import { sendToAdmins, createTutorRegistrationEmail, getEmailServiceStatus } from "./email";
 import { TutorRankingService } from "./services/tutorRanking";
 import studyBuddyRoutes from "./routes/studyBuddyRoutes";
+import { createZoomMeeting, deleteZoomMeeting, isZoomConfigured, getZoomStatus } from "./zoom";
 
 const chooseRoleSchema = z.object({
   role: z.enum(["student", "tutor", "admin"]),
@@ -2521,7 +2522,40 @@ app.get("/api/tutors/:id", async (req, res) => {
         }
       }
 
-      await ref.set({ status, updatedAt: now() }, { merge: true });
+      // Generate Zoom meeting when session is confirmed (status changes to "scheduled")
+      let zoomMeetingData: any = {};
+      if (status === "scheduled" && isZoomConfigured()) {
+        try {
+          // Get session details for meeting topic
+          const subjectSnap = await fdb!.collection("subjects").doc(session.subjectId).get();
+          const subjectName = subjectSnap.exists ? subjectSnap.data()?.name : "Tutoring Session";
+
+          const studentSnap = await fdb!.collection("users").doc(session.studentId).get();
+          const studentName = studentSnap.exists
+            ? `${studentSnap.data()?.firstName || ""} ${studentSnap.data()?.lastName || ""}`.trim()
+            : "Student";
+
+          const topic = `${subjectName} - ${studentName}`;
+
+          // Create Zoom meeting
+          const zoomLinks = await createZoomMeeting(topic, session.duration || 60);
+
+          zoomMeetingData = {
+            meetingLink: zoomLinks.participantJoinUrl, // Default meeting link for compatibility
+            zoomHostStartUrl: zoomLinks.hostStartUrl, // Tutor uses this to start as host
+            zoomParticipantJoinUrl: zoomLinks.participantJoinUrl, // Student uses this to join
+            zoomMeetingId: zoomLinks.meetingId,
+            zoomMeetingPassword: zoomLinks.meetingPassword,
+          };
+
+          console.log(`✅ Zoom meeting created for session ${sessionId}:`, zoomLinks.meetingId);
+        } catch (error) {
+          console.error("⚠️ Failed to create Zoom meeting:", error);
+          // Don't fail the session confirmation if Zoom fails
+        }
+      }
+
+      await ref.set({ status, ...zoomMeetingData, updatedAt: now() }, { merge: true });
 
       // Invalidate stats cache if session was completed
       if (status === "completed") {
@@ -3256,6 +3290,62 @@ I'm here to help you understand the concepts better and practice! Feel free to a
       console.error("Error generating Google Calendar URL:", error);
       res.status(500).json({ message: "Failed to generate Google Calendar URL", fieldErrors: {} });
     }
+  });
+
+  // Get Zoom meeting link (role-specific: host URL for tutors, participant URL for students)
+  app.get("/api/sessions/:id/zoom-meeting-link", requireUser, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const user = req.user!;
+
+      const sessionSnap = await fdb!.collection("tutoring_sessions").doc(id).get();
+      if (!sessionSnap.exists) {
+        return res.status(404).json({ message: "Session not found", fieldErrors: {} });
+      }
+
+      const session = { id: sessionSnap.id, ...sessionSnap.data() } as any;
+
+      // Check if user has access to this session
+      const tutorProfileSnap = session.tutorId
+        ? await fdb!.collection("tutor_profiles").doc(session.tutorId).get()
+        : null;
+      const tutorProfile = tutorProfileSnap?.exists ? tutorProfileSnap.data() : null;
+
+      const isStudent = session.studentId === user.id;
+      const isTutor = tutorProfile?.userId === user.id;
+      const isAdmin = user.role === "admin";
+
+      if (!isStudent && !isTutor && !isAdmin) {
+        return res.status(403).json({ message: "Access denied", fieldErrors: {} });
+      }
+
+      // Check if Zoom meeting exists
+      if (!session.zoomHostStartUrl || !session.zoomParticipantJoinUrl) {
+        return res.status(404).json({
+          message: "Zoom meeting not available for this session",
+          fieldErrors: {},
+        });
+      }
+
+      // Return appropriate link based on user role
+      const meetingLink = isTutor || isAdmin
+        ? session.zoomHostStartUrl // Tutor gets host URL to start meeting
+        : session.zoomParticipantJoinUrl; // Student gets participant URL
+
+      res.json({
+        meetingLink,
+        role: isTutor ? "host" : "participant",
+        meetingId: session.zoomMeetingId,
+      });
+    } catch (error) {
+      console.error("Error getting Zoom meeting link:", error);
+      res.status(500).json({ message: "Failed to get meeting link", fieldErrors: {} });
+    }
+  });
+
+  // Check Zoom configuration status
+  app.get("/api/zoom/status", requireUser, requireAdmin, async (req, res) => {
+    res.json(getZoomStatus());
   });
 
   // Manual trigger for sending reminders (admin only, for testing)

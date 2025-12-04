@@ -56,6 +56,8 @@
     "@uppy/core": "^4.5.3",
     "@uppy/dashboard": "^4.4.3",
     "@uppy/react": "^4.5.2",
+    "@zoom/meetingsdk": "^5.0.0",
+    "axios": "^1.13.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
